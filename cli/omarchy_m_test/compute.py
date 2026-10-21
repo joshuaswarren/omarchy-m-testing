@@ -60,8 +60,16 @@ import json
 out = {"installed": False}
 try:
     import mlx.core as mx
+except ModuleNotFoundError as error:
+    out["error"] = type(error).__name__
+    out["absent"] = (error.name or "").split(".")[0] == "mlx"
+    out["message"] = str(error).splitlines()[0][:120] if str(error) else ""
+    print(json.dumps(out))
+    raise SystemExit
 except Exception as error:
     out["error"] = type(error).__name__
+    out["absent"] = False
+    out["message"] = str(error).splitlines()[0][:120] if str(error) else ""
     print(json.dumps(out))
     raise SystemExit
 out["installed"] = True
@@ -163,7 +171,9 @@ def _gpu(host: Host, log: str) -> dict:
 
 
 def _mlx(host: Host) -> dict:
-    result = _run(host, ["python3", "-c", MLX_SCRIPT], 20)
+    # -I: no script directory or current directory on sys.path, no PYTHON* variables, no user site, so a json.py or an mlx
+    # package in the directory the CLI was started from is never imported.
+    result = _run(host, ["python3", "-I", "-c", MLX_SCRIPT], 20)
     if result.returncode == 127:
         return {"state": "no-python"}
     if result.returncode == 124:
@@ -177,7 +187,9 @@ def _mlx(host: Host) -> dict:
         message = (result.stderr.strip().splitlines() or ["no message"])[-1]
         return {"state": "error", "returncode": result.returncode, "error": message[:160]}
     if not parsed.get("installed"):
-        return {"state": "missing", "error": str(parsed.get("error", ""))[:60]}
+        if parsed.get("absent", True):
+            return {"state": "missing", "error": str(parsed.get("error", ""))[:60]}
+        return {"state": "broken", "error": f"{str(parsed.get('error', ''))[:60]}: {str(parsed.get('message', ''))[:120]}"}
     info = parsed.get("info")
     info = info if isinstance(info, dict) else {}
     return {
@@ -332,6 +344,8 @@ def gpu_result(found: dict) -> dict:
         return _automatic(GPU_MLX, "fail", [f"mlx imported but the test op failed (exit {mlx.get('returncode')}): {mlx.get('error')}", *details])
     if state == "timeout":
         return _automatic(GPU_MLX, "fail", ["the MLX test op did not finish in 20 s", *details])
+    if state == "broken":
+        return _automatic(GPU_MLX, "fail", [f"MLX is installed but import mlx.core failed: {mlx.get('error')}", *details])
     why = {"missing": "MLX isn't installed for python3 (import mlx.core failed): the MLX op was not run",
            "no-python": "python3 isn't available: the MLX op was not run"}.get(state, "the MLX op was not run")
     return _automatic(GPU_MLX, "skip", [why, *details])

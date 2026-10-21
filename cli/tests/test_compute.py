@@ -244,6 +244,20 @@ class CollectTest(unittest.TestCase):
 
         self.assertEqual(Crashed().compute_snapshot()["mlx"], {"state": "error", "returncode": 1, "error": "RuntimeError: no Vulkan device"})
 
+    def test_an_mlx_that_is_installed_but_cannot_import_is_broken_not_missing(self):
+        broken = FakeMac(mlx={"installed": False, "error": "OSError", "absent": False, "message": "libmlx.so: cannot open shared object file"})
+        self.assertEqual(broken.compute_snapshot()["mlx"], {"state": "broken", "error": "OSError: libmlx.so: cannot open shared object file"})
+        other_module = FakeMac(mlx={"installed": False, "error": "ModuleNotFoundError", "absent": False, "message": "No module named 'numpy'"})
+        self.assertEqual(other_module.compute_snapshot()["mlx"]["state"], "broken")
+        absent = FakeMac(mlx={"installed": False, "error": "ModuleNotFoundError", "absent": True, "message": "No module named 'mlx'"})
+        self.assertEqual(absent.compute_snapshot()["mlx"]["state"], "missing")
+
+    def test_the_mlx_subprocess_runs_isolated_so_the_current_directory_is_not_imported(self):
+        mac = FakeMac()
+        mac.compute_snapshot()
+        mlx = next(a for a in mac.commands if "python3" in a)
+        self.assertEqual(mlx[4:7], ["python3", "-I", "-c"])
+
 
 class GpuResultTest(unittest.TestCase):
     def found(self, **kwargs) -> dict:
@@ -283,6 +297,11 @@ class GpuResultTest(unittest.TestCase):
     def test_a_crashed_op_fails_and_a_hung_one_fails(self):
         self.assertEqual(compute.gpu_result({**self.found(), "mlx": {"state": "error", "returncode": 1, "error": "boom"}})["status"], "fail")
         self.assertEqual(compute.gpu_result({**self.found(), "mlx": {"state": "timeout"}})["status"], "fail")
+
+    def test_a_broken_mlx_import_fails_and_does_not_skip(self):
+        result = compute.gpu_result({**self.found(), "mlx": {"state": "broken", "error": "OSError: libmlx.so: cannot open shared object file"}})
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("import mlx.core failed", result["evidence"][0])
 
     def test_no_render_node_and_no_vulkan_device_are_said(self):
         found = self.found(vulkan=False)
