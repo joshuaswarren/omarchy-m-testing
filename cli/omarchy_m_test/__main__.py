@@ -7,7 +7,7 @@ from .host import RealHost
 
 def _interrupt(signum, frame):
     # Closing the terminal (SIGHUP) or being asked to stop (SIGTERM) ends the
-    # run like Ctrl-C does, so every change is put back and the checkpoint kept.
+    # run like Ctrl-C does.
     raise KeyboardInterrupt
 
 
@@ -18,7 +18,7 @@ def run() -> int:
         return main(sys.argv[1:], RealHost())
     except KeyboardInterrupt:
         try:
-            print("\nInterrupted. Nothing was uploaded.", file=sys.stderr)
+            print("\nInterrupted. Upload completion was not confirmed.", file=sys.stderr)
         except OSError:
             pass  # the terminal is gone
         return 130

@@ -475,7 +475,7 @@ class InterruptionTest(unittest.TestCase):
         self.assertEqual(state, MacState(muted=True))
         self.assertEqual(json.loads(host.written[CHECKPOINT])["restorers"], [])
         self.assertNotIn(REPORT_FILE, host.written)
-        self.assertIn("put back", host.output)
+        self.assertIn("Review any cleanup warnings above", host.output)
 
     def test_a_run_killed_mid_section_has_everything_put_back_by_the_next_run_first(self):
         class Killed(LiveMac):

@@ -9,9 +9,9 @@ outright, and assert on the commands the Mac was sent and the checkpoint left.
 from __future__ import annotations
 
 import json
-import os
 import unittest
 
+from omarchy_m_test import TOOL_NAME
 from omarchy_m_test.app import main
 from omarchy_m_test.recording import ENDED, EOF, INTERRUPT, RecordedHost
 from omarchy_m_test.session import Section
@@ -20,9 +20,8 @@ from tests.desktop import (
     BENCHMARK_OFFER, CHECKPOINT, HUMAN_QUESTIONS, LISTEN, MUTE, OPENGL_OFFERED, SECTIONS, UNANSWERED, UNMUTE, VOLUME_BACK, VOLUME_DOWN,
     host, recording, with_home, with_section_commands,
 )
+from tests.test_seam_a import golden
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-GOLDEN = os.path.join(os.path.dirname(os.path.dirname(HERE)), "schema", "golden", "m2-max-image2.json")
 REPORT_FILE = "omarchy-m-test-report.json"
 ENTER = ""
 RESUME = "Resume where it stopped? [Y/n] "
@@ -67,7 +66,7 @@ class RestorerTest(unittest.TestCase):
         self.assertEqual(status, 130)
         self.assertEqual(after(mac, MUTE), [UNMUTE, VOLUME_BACK])
         self.assertIn("Interrupted", mac.output)
-        self.assertIn("put back", mac.output)
+        self.assertIn("Review any cleanup warnings above", mac.output)
         self.assertNotIn(REPORT_FILE, mac.written)
         saved = json.loads(mac.written[CHECKPOINT])
         self.assertEqual(saved["restorers"], [])
@@ -141,6 +140,17 @@ class RestorerTest(unittest.TestCase):
         self.assertIn("Couldn't undo: the speaker volume (no default sink)", mac.output)
         self.assertIn(" ".join(VOLUME_BACK), mac.output)
 
+    def test_an_interrupt_reports_cleanup_failures_without_claiming_everything_was_restored(self):
+        mac = tone_mac([ENTER, *UNANSWERED, INTERRUPT], restore_returncode=1)
+
+        status = main(["--dry-run"], mac, sections=SECTIONS)
+
+        self.assertEqual(status, 130)
+        self.assertIn("Couldn't undo: the speaker volume (no default sink)", mac.output)
+        self.assertIn(" ".join(VOLUME_BACK), mac.output)
+        self.assertIn("Review any cleanup warnings above", mac.output)
+        self.assertNotIn(f"Everything {TOOL_NAME} changed was put back", mac.output)
+
 
 class CheckpointTest(unittest.TestCase):
     def interrupted(self) -> str:
@@ -160,8 +170,7 @@ class CheckpointTest(unittest.TestCase):
         # The interrupted Tone section runs again; the finished System section's results come from the checkpoint.
         self.assertIn(VOLUME_DOWN, mac.commands_run)
         self.assertIn(LISTEN, prompts(mac))
-        with open(GOLDEN, encoding="utf-8") as f:
-            self.assertEqual(mac.written[REPORT_FILE], f.read())
+        self.assertEqual(mac.written[REPORT_FILE], golden("m2-max-image2"))
         self.assertNotIn(CHECKPOINT, mac.written)
 
     def test_finished_sections_are_not_run_again(self):

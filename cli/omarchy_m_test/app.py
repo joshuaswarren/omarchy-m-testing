@@ -1,10 +1,11 @@
 """The whole CLI run: refuse non-Apple machines, disclaimer, sections, report, upload.
 
 Sections run one after another (session.py): each is checkpointed when it
-finishes, and every change it makes is restored when it ends, on an error or
-on Ctrl-C. Disruptive sections are skipped over SSH or without a local seat
-(presence.py). Everything runs through a Guarded host (safety.py): the tool
-never reboots, and never touches disk encryption or boot files.
+finishes, and the restorers for its changes are run when it ends, on an error
+or on Ctrl-C; a failed restorer is reported. Disruptive sections are skipped
+over SSH or without a local seat (presence.py). Everything runs through a
+Guarded host (safety.py): the tool never reboots, and never touches disk
+encryption or boot files.
 """
 
 from __future__ import annotations
@@ -113,7 +114,7 @@ def _interruptible(args: argparse.Namespace, host: Host, sections: Sequence[Sect
         return _run(args, host, sections)
     except KeyboardInterrupt:
         host.show(
-            f"\nInterrupted. Everything {TOOL_NAME} changed was put back and nothing was uploaded."
+            "\nInterrupted. Review any cleanup warnings above. Upload completion was not confirmed."
             + (f"\nRun {TOOL_NAME} again to resume where it stopped." if args.resumable else "")
         )
         return EXIT_INTERRUPTED
