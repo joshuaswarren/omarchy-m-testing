@@ -38,7 +38,10 @@ SCHEMA = json.loads(read(os.path.join(SCHEMA_DIR, "report-v1.schema.json")))
 
 
 def golden(name: str) -> str:
-    return read(os.path.join(SCHEMA_DIR, "golden", f"{name}.json"))
+    """The historical golden report with the consent version accepted by this replay."""
+    report = json.loads(read(os.path.join(SCHEMA_DIR, "golden", f"{name}.json")))
+    report["consent_version"] = CONSENT_VERSION
+    return json.dumps(report, indent=2, ensure_ascii=False) + "\n"
 
 
 def host(recording: str, answers=(), responses=()) -> RecordedHost:
@@ -83,7 +86,7 @@ class FullRunTest(unittest.TestCase):
         main(["--dry-run"], mac)
 
         self.assertEqual(json.loads(mac.written[REPORT_FILE])["consent_version"], CONSENT_VERSION)
-        self.assertEqual(CONSENT_VERSION, 6)  # the disclaimer says a run offers the tester sign-in once
+        self.assertEqual(CONSENT_VERSION, 7)  # the disclaimer says cleanup may need finishing by hand
 
     def test_output_option_chooses_where_the_report_is_written(self):
         mac = host("m2-max-image2", answers=[ENTER, ENDED])
@@ -124,6 +127,21 @@ class UploadDeclinedOrFailedTest(unittest.TestCase):
         self.assertEqual(main(["--site", SITE], mac), 0)
         self.assertIn(f"Upload this report to {SITE}? [Y/n] ", [e[1] for e in mac.transcript if e[0] == "prompt"])
         self.assertEqual(len(mac.posts), 1)
+
+    def test_an_interrupt_during_upload_does_not_claim_nothing_was_uploaded(self):
+        class InterruptedUpload(RecordedHost):
+            def post_json(self, url, body):
+                super().post_json(url, body)
+                raise KeyboardInterrupt
+
+        mac = InterruptedUpload(host("m2-max-image2").recording, answers=[ENTER, *UNANSWERED, "y"], responses=[created()])
+
+        status = main(["--site", SITE], mac)
+
+        self.assertEqual(status, 130)
+        self.assertEqual(len(mac.posts), 1)
+        self.assertIn("Upload completion was not confirmed", mac.output)
+        self.assertNotIn("nothing was uploaded", mac.output.lower())
 
     def test_a_rejected_upload_shows_the_sites_reason(self):
         rejected = HttpResponse(422, json.dumps({"error": "Report does not match schema v1.", "details": ["checks is missing"]}))

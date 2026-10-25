@@ -19,6 +19,7 @@ from omarchy_m_test.app import main
 from omarchy_m_test.recording import ENDED, RECORDED_SOURCES, RecordedHost, RecordingHost
 from tests.corpus import MACHINES, forbidden, raw_host, raw_recording, seeded_recording_path
 from tests.schema_validator import errors
+from tests.test_seam_a import golden
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_DIR = os.path.join(os.path.dirname(os.path.dirname(HERE)), "schema")
@@ -196,7 +197,7 @@ class RecordModeTest(unittest.TestCase):
 
                 self.assertEqual(status, 0)
                 self.assertEqual(replay.written[REPORT_FILE], recorded.written[REPORT_FILE])
-                self.assertEqual(replay.written[REPORT_FILE], read(os.path.join(SCHEMA_DIR, "golden", f"{machine}.json")))
+                self.assertEqual(replay.written[REPORT_FILE], golden(machine))
                 self.assertEqual(errors(SCHEMA, json.loads(replay.written[REPORT_FILE])), [])
 
     def test_the_seeded_recordings_are_what_record_mode_saves_from_the_evidence(self):

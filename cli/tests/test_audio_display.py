@@ -321,7 +321,7 @@ class BrightnessTest(unittest.TestCase):
         host = run("display", ["s"], cls=Stopped, status=130)
 
         self.assertEqual(host.commands_run[-1], PANEL_BACK)
-        self.assertIn("put back", host.output)
+        self.assertIn("Review any cleanup warnings above", host.output)
 
     def test_a_mac_without_brightnessctl_is_skipped(self):
         rec = answer(live_recording(), display.LIST_LIGHTS, 127, stderr="brightnessctl: command not found\n")

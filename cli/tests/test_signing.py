@@ -19,9 +19,11 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
-from omarchy_m_test import signing
+from omarchy_m_test import report as report_module, signing
 from omarchy_m_test.app import main
+from omarchy_m_test.consent import CONSENT_VERSION
 from omarchy_m_test.host import RealHost
 from omarchy_m_test.recording import ENDED, RecordedHost
 from tests.desktop import DECLINED, UNANSWERED
@@ -171,14 +173,15 @@ class MachineKeyTest(unittest.TestCase):
 SIGNED_RUNS = {"m2-max-image2": None, "m2-max-image2-awkward-kernel": AWKWARD_KERNEL}
 
 
-def signed_run(kernel: str | None = None) -> str:
+def signed_run(kernel: str | None = None, consent_version: int = CONSENT_VERSION) -> str:
     """The m2 Max run's report, signed by the fixture key."""
     state = tempfile.mkdtemp()
     try:
         with_fixture_key(state)
         mac = signing_mac(state, recording(kernel=kernel))
-        if main(["--dry-run"], mac) != 0:
-            raise AssertionError(mac.output)
+        with mock.patch.object(report_module, "CONSENT_VERSION", consent_version):
+            if main(["--dry-run"], mac) != 0:
+                raise AssertionError(mac.output)
         return mac.written[REPORT_FILE]
     finally:
         shutil.rmtree(state)
@@ -194,11 +197,12 @@ class SignedGoldenTest(unittest.TestCase):
     """The fixture key signs the same report the same way every time (ed25519 is deterministic)."""
 
     def test_the_m2_max_run_signs_to_the_signed_golden_report(self):
-        self.assertEqual(signed_run(), read(os.path.join(SIGNED_GOLDEN, "m2-max-image2.json")))
+        self.assertEqual(signed_run(consent_version=6), read(os.path.join(SIGNED_GOLDEN, "m2-max-image2.json")))
         self.assertEqual(signed_run(), signed_run())
+        self.assertEqual(json.loads(signed_run())["consent_version"], CONSENT_VERSION)
 
     def test_quotes_backslashes_and_non_ascii_sign_to_their_golden_report(self):
-        text = signed_run(AWKWARD_KERNEL)
+        text = signed_run(AWKWARD_KERNEL, consent_version=6)
 
         self.assertEqual(json.loads(text)["machine"]["kernel"], AWKWARD_KERNEL)
         self.assertEqual(text, read(os.path.join(SIGNED_GOLDEN, "m2-max-image2-awkward-kernel.json")))

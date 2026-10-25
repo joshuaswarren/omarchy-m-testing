@@ -27,6 +27,7 @@ import unittest
 
 from omarchy_m_test import benchmarks
 from omarchy_m_test.app import main
+from omarchy_m_test.consent import CONSENT_VERSION
 from omarchy_m_test.sections import APPLE
 from tests.desktop import command, recording
 from tests.live_mac import CATALOGUE_PATH, LiveMac, MacState, live_recording
@@ -267,7 +268,9 @@ class ScoresTest(unittest.TestCase):
 
     def test_the_golden_report_is_what_the_section_writes(self):
         with open(GOLDEN, encoding="utf-8") as f:
-            self.assertEqual(golden_report(), f.read())
+            expected = json.load(f)
+        expected["consent_version"] = CONSENT_VERSION
+        self.assertEqual(json.loads(golden_report()), expected)
 
 
 class FailuresTest(unittest.TestCase):

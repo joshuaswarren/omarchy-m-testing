@@ -22,6 +22,7 @@ from tests.desktop import (
     bare_desktop, command, host, omarchy_desktop, recording,
 )
 from tests.schema_validator import errors
+from tests.test_seam_a import golden
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_DIR = os.path.join(os.path.dirname(os.path.dirname(HERE)), "schema")
@@ -36,7 +37,7 @@ def read(path: str) -> str:
         return f.read()
 
 
-GOLDEN = read(os.path.join(SCHEMA_DIR, "golden", "m2-max-image2.json"))
+GOLDEN = golden("m2-max-image2")
 SCHEMA = json.loads(read(os.path.join(SCHEMA_DIR, "report-v1.schema.json")))
 
 
