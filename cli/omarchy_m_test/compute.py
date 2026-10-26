@@ -17,6 +17,15 @@ ane.enabled
           needs: the SoC and board, the ANE and DART device-tree nodes, the
           kernel's ANE and accelerator build options, the modules and firmware
           on disk, IOMMU state and the ANE kernel-log lines.
+ane.works Passes when the Neural Engine runs a tiny known program correctly. It
+          runs `omarchy-ane-smoke` (omarchy-ane's shipped add program, 20 calls
+          through libane, every output compared bit for bit with the exact fp16
+          sum of fixed inputs) and reports the chip, the die and the call times.
+          It fails on a wrong output, a crash or a hang, and skips when there is
+          no ANE, the ANE is not enabled, omarchy-ane is not installed or this
+          chip has no program yet. It runs only the smoke tool (no root, no
+          module load); the tool takes the ANE lock itself and removes its own
+          temporary directory.
 """
 
 from __future__ import annotations
@@ -27,8 +36,12 @@ import re
 from .host import Host
 from .session import Context
 
-GPU_MLX, ANE_ENABLED = "gpu.mlx", "ane.enabled"
-CHECK_IDS = (GPU_MLX, ANE_ENABLED)
+GPU_MLX, ANE_ENABLED, ANE_WORKS = "gpu.mlx", "ane.enabled", "ane.works"
+CHECK_IDS = (GPU_MLX, ANE_ENABLED, ANE_WORKS)
+SMOKE = "omarchy-ane-smoke"
+SMOKE_SECONDS = 50  # the tool's own limit for the whole run, inside the 60 s the host allows
+SMOKE_CALLS = 20
+HEX64 = re.compile(r"[0-9a-f]{64}")
 
 DT_BASE = "/sys/firmware/devicetree/base"
 DRM = "/sys/class/drm"
@@ -263,6 +276,47 @@ def _ane(host: Host, release: str | None, log: str) -> dict:
     return found
 
 
+def _ane_works(host: Host, ane: dict) -> dict:
+    """Run omarchy-ane-smoke once when there is an enabled ANE; keep only its small result line."""
+    if not ane.get("nodes"):
+        return {"state": "no-ane"}
+    enabled = bool(ane.get("modules")) and bool(ane.get("dev_accel") or ane.get("class_accel")) and any(d["bound"] for d in ane.get("devices", []))
+    if not enabled:
+        return {"state": "not-enabled"}
+    result = _run(host, [SMOKE, "--timeout", str(SMOKE_SECONDS)], SMOKE_SECONDS + 10)
+    if result.returncode == 127:
+        return {"state": "missing"}
+    if result.returncode == 124:
+        return {"state": "timeout"}
+    last = (result.stdout.strip().splitlines() or [""])[-1]
+    try:
+        parsed = json.loads(last)
+    except ValueError:
+        parsed = None
+    out: dict = {"state": "ran", "exit": result.returncode}
+    if isinstance(parsed, dict):
+        for key in ("chip", "name", "reason"):
+            if isinstance(parsed.get(key), str):
+                out[key] = parsed[key][:160]
+        for key in ("die", "errors"):
+            if isinstance(parsed.get(key), int) and not isinstance(parsed.get(key), bool):
+                out[key] = parsed[key]
+        for key in ("min_ms", "median_ms"):
+            if isinstance(parsed.get(key), (int, float)) and not isinstance(parsed.get(key), bool):
+                out[key] = float(parsed[key])
+        if isinstance(parsed.get("available"), bool):
+            out["available"] = parsed["available"]
+        if isinstance(parsed.get("golden_sha256"), str) and HEX64.fullmatch(parsed["golden_sha256"]):
+            out["golden_sha256"] = parsed["golden_sha256"]
+        hashes = parsed.get("sha256")
+        if isinstance(hashes, list):
+            out["calls"] = len(hashes)
+    else:
+        message = (result.stderr.strip().splitlines() or ["no message"])[-1]
+        out["unparsed"] = message[:160]
+    return out
+
+
 def collect(host: Host) -> dict:
     """Called inside RealHost; only this derived snapshot crosses the host boundary."""
     compatible = _read(host, "/proc/device-tree/compatible", 512)
@@ -281,9 +335,10 @@ def collect(host: Host) -> dict:
         words = line.split()
         if len(words) == 2 and words[0] in PACKAGES and re.fullmatch(r"[A-Za-z0-9._+:~-]{1,64}", words[1]):
             packages[words[0]] = words[1]
+    ane = _ane(host, release, text)
     return {
         "apple": True, "board": board[:4], "kernel": release, "packages": packages, "log_available": bool(text.strip()),
-        "gpu": _gpu(host, text), "mlx": _mlx(host), "ane": _ane(host, release, text),
+        "gpu": _gpu(host, text), "mlx": _mlx(host), "ane": ane, "ane_works": _ane_works(host, ane),
     }
 
 
@@ -422,9 +477,41 @@ def ane_result(found: dict) -> dict:
     return _automatic(ANE_ENABLED, "fail", [f"ANE not enabled: {'; '.join(reasons) or 'the driver state is incomplete'}", *ane_evidence(found), *ane_diagnostics(found), *log])
 
 
+def ane_works_result(found: dict) -> dict:
+    """ane.works: omarchy-ane-smoke ran its add program on the ANE and every call was bit-exact."""
+    works = found.get("ane_works")
+    state = works.get("state") if isinstance(works, dict) else None
+    if state is None:
+        return _automatic(ANE_WORKS, "skip", ["this snapshot has no ANE execution test"])
+    if state == "no-ane":
+        return _automatic(ANE_WORKS, "skip", ["this Mac's device tree has no ANE node, so there is nothing to run a program on"])
+    if state == "not-enabled":
+        return _automatic(ANE_WORKS, "skip", ["the ANE is not enabled (see ane.enabled), so no program was run"])
+    if state == "missing":
+        return _automatic(ANE_WORKS, "skip", [f"{SMOKE} is not installed, so no program was run; install the omarchy-ane package to test that the ANE computes correctly"])
+    if state == "timeout":
+        return _automatic(ANE_WORKS, "fail", [f"{SMOKE} did not finish within {SMOKE_SECONDS + 10} s: the ANE or its driver hung or stopped answering"])
+    chip, code = works.get("chip", "unknown chip"), works.get("exit")
+    detail = [f"{SMOKE} exit {code}; chip {chip}" + (f", die {works['die']}" if "die" in works else "")]
+    if "unparsed" in works:
+        # exit 2 without a result line is a usage or environment problem (for example an older tool without --timeout), not a wrong ANE
+        status = "skip" if code == 2 else "fail"
+        return _automatic(ANE_WORKS, status, [f"{SMOKE} gave no result line: {works['unparsed']}", *detail])
+    if code == 0 and works.get("available") is True and works.get("errors") == 0 and works.get("calls") == SMOKE_CALLS and "golden_sha256" in works:
+        timing = f", min {works['min_ms']:.3f} ms, median {works['median_ms']:.3f} ms" if "min_ms" in works and "median_ms" in works else ""
+        return _automatic(ANE_WORKS, "pass", [f"the ANE ran the add program {SMOKE_CALLS} times on {chip} and every output equals the exact fp16 sum, bit for bit{timing}",
+                                              f"golden sha256 {works['golden_sha256']}", *detail])
+    if code == 2 and works.get("available") is False:
+        return _automatic(ANE_WORKS, "skip", [f"{SMOKE} could not run: {works.get('reason', 'no reason given')}", *detail])
+    if code == 1:
+        return _automatic(ANE_WORKS, "fail", [f"the ANE gave a wrong result: {works.get('errors', 'some')} of {SMOKE_CALLS} calls differ from the exact sum"
+                                              + (f" ({works['reason']})" if "reason" in works else ""), *detail])
+    return _automatic(ANE_WORKS, "fail", [f"{SMOKE} reported an inconsistent result (exit {code}, errors {works.get('errors')}, calls {works.get('calls')})", *detail])
+
+
 def run(ctx: Context) -> list[dict]:
     found = ctx.host.compute_snapshot()
     if found.get("apple") is not True:
         why = "not an Apple Mac" if found.get("apple") is False else "the Apple device tree couldn't be read, so nothing was collected"
-        return [_automatic(GPU_MLX, "skip", [why]), _automatic(ANE_ENABLED, "skip", [why])]
-    return [gpu_result(found), ane_result(found)]
+        return [_automatic(GPU_MLX, "skip", [why]), _automatic(ANE_ENABLED, "skip", [why]), _automatic(ANE_WORKS, "skip", [why])]
+    return [gpu_result(found), ane_result(found), ane_works_result(found)]

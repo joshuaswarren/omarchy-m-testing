@@ -41,6 +41,12 @@ MLX_RAN = {"installed": True, "version": "0.32.4", "device": "Device(gpu, 0)", "
            "info": {"device_name": "Apple M2 Max (G14C B1)", "driver": "Honeykrisp", "driver_info": "Mesa 26.3.0-devel (git-a5b1797446)", "gpu_cores": 38}}
 
 
+GOLDEN = "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"
+SMOKE_PASS = {"name": "add-fixture", "chip": "t6021", "die": 0, "available": True, "sha256": [GOLDEN] * 20, "golden_sha256": GOLDEN,
+              "errors": 0, "min_ms": 2.5, "median_ms": 2.75}
+SMOKE_OK = CommandResult(0, json.dumps(SMOKE_PASS) + "\n", "omarchy-ane-smoke: add-fixture on t6021: 20/20 calls bit-exact\n")
+
+
 def fixture(name: str) -> dict:
     with open(os.path.join(FIXTURES, name), encoding="utf-8") as f:
         return json.load(f)
@@ -49,7 +55,8 @@ def fixture(name: str) -> dict:
 class FakeMac(RealHost):
     """A synthetic sysfs, device tree and command set. Anything that would write, or read a private file, fails the test."""
 
-    def __init__(self, *, ane: bool = True, node_status: bytes = b"okay\0", mlx: dict | None = MLX_RAN, vulkan: bool = True, log: str = LOG):
+    def __init__(self, *, ane: bool = True, node_status: bytes = b"okay\0", mlx: dict | None = MLX_RAN, vulkan: bool = True, log: str = LOG,
+                 smoke: CommandResult | None = SMOKE_OK):
         self.files = {
             "/proc/device-tree/compatible": b"apple,j414c\0apple,t6021\0apple,arm-platform\0",
             "/proc/sys/kernel/osrelease": b"7.1.12-2-ARCH\n",
@@ -79,7 +86,7 @@ class FakeMac(RealHost):
         else:
             self.dirs[compute.MODULES] = ["apple_dart", "ext4"]
             self.dirs[compute.ACCEL_DEV] = FileNotFoundError("/dev/accel")
-        self.mlx, self.vulkan, self.log = mlx, vulkan, log
+        self.mlx, self.vulkan, self.log, self.smoke = mlx, vulkan, log, smoke
         self.commands: list[list[str]] = []
         self.reads: list[str] = []
 
@@ -112,6 +119,8 @@ class FakeMac(RealHost):
             if self.mlx is None:
                 return CommandResult(127, "", "not found")
             return CommandResult(0, "noise\n" + json.dumps(self.mlx) + "\n", "")
+        if command[0] == "omarchy-ane-smoke":
+            return self.smoke if self.smoke is not None else CommandResult(127, "", "not found")
         if command[0] == "journalctl":
             return CommandResult(0, self.log, "")
         if command[:2] == ["zcat", "/proc/config.gz"]:
@@ -128,7 +137,7 @@ class FakeMac(RealHost):
 
 
 def results(found: dict) -> dict[str, dict]:
-    return {r["id"]: r for r in (compute.gpu_result(found), compute.ane_result(found))}
+    return {r["id"]: r for r in (compute.gpu_result(found), compute.ane_result(found), compute.ane_works_result(found))}
 
 
 def context(mac) -> Context:
@@ -405,7 +414,7 @@ class ReportShapeTest(unittest.TestCase):
         cat = catalogue.parse(bundled.catalogue_text())
 
         self.assertEqual(section.check_ids, compute.CHECK_IDS)
-        self.assertEqual(ORDER[-2:], compute.CHECK_IDS)
+        self.assertEqual(ORDER[-3:], compute.CHECK_IDS)
         self.assertEqual({cat.feature_for_check(c)["id"] for c in compute.CHECK_IDS}, {"gpu", "neural-engine"})
         self.assertEqual(len(ORDER), len(set(ORDER)))
         self.assertEqual([c for s in APPLE for c in s.check_ids if not c.startswith("benchmark")], list(ORDER))
@@ -421,7 +430,7 @@ class ReportShapeTest(unittest.TestCase):
         self.assertEqual(replay.compute_snapshot(), found)
 
     def test_the_section_runs_through_a_recorded_host(self):
-        for found, statuses in ((FakeMac().compute_snapshot(), ["pass", "pass"]), ({"apple": False}, ["skip", "skip"]), ({"apple": None}, ["skip", "skip"])):
+        for found, statuses in ((FakeMac().compute_snapshot(), ["pass", "pass", "pass"]), ({"apple": False}, ["skip", "skip", "skip"]), ({"apple": None}, ["skip", "skip", "skip"])):
             mac = RecordedHost({"recording_version": 1, "commands": [{"argv": COMPUTE_SNAPSHOT, "returncode": 0, "stdout": json.dumps(found), "stderr": ""}]})
 
             out = compute.run(context(mac))
@@ -446,7 +455,7 @@ class RealMacTest(unittest.TestCase):
 
         out = results(found)
 
-        self.assertEqual({k: v["status"] for k, v in out.items()}, {"gpu.mlx": "pass", "ane.enabled": "pass"})
+        self.assertEqual({k: v["status"] for k, v in out.items()}, {"gpu.mlx": "pass", "ane.enabled": "pass", "ane.works": "skip"})  # a snapshot from before ane.works
         self.assertIn("device_name: Apple M1 (G13G B1), marketing_name: Apple M1, driver: Honeykrisp, driver_info: Mesa 26.3.0-devel (git-69bde15340), gpu_cores: 8", out["gpu.mlx"]["evidence"])
         self.assertIn("vulkaninfo --summary: missing", out["gpu.mlx"]["evidence"])
         self.assertIn("module ane parameters: autosuspend_ms=1500, boost_idle_ms=100, dart_contain=Y, map_batch=Y, map_mode=3, stats=Y", out["ane.enabled"]["evidence"])
@@ -456,7 +465,7 @@ class RealMacTest(unittest.TestCase):
 
         out = results(found)
 
-        self.assertEqual({k: v["status"] for k, v in out.items()}, {"gpu.mlx": "pass", "ane.enabled": "pass"})
+        self.assertEqual({k: v["status"] for k, v in out.items()}, {"gpu.mlx": "pass", "ane.enabled": "pass", "ane.works": "skip"})  # a snapshot from before ane.works
         parameters = " ".join(line for line in out["ane.enabled"]["evidence"] if line.startswith("module ane_t6021 parameters:"))
         self.assertIn("call_settle_us=100", parameters)
         self.assertTrue(any(line.startswith("deviceName=Apple M2 Max (G14C B1)") for line in out["gpu.mlx"]["evidence"]))
@@ -481,3 +490,109 @@ class RealMacTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AneWorksTest(unittest.TestCase):
+    """ane.works: the ANE computes a known program correctly (omarchy-ane-smoke), and what it says when it cannot."""
+
+    def smoke_result(self, **kwargs):
+        mac = FakeMac(**kwargs)
+        found = mac.compute_snapshot()
+        return compute.ane_works_result(found), found, mac
+
+    def test_every_call_bit_exact_passes_and_names_the_chip_the_timing_and_the_golden(self):
+        result, found, mac = self.smoke_result()
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["id"], "ane.works")
+        self.assertIn("the ANE ran the add program 20 times on t6021 and every output equals the exact fp16 sum, bit for bit, min 2.500 ms, median 2.750 ms", result["evidence"])
+        self.assertIn("golden sha256 " + GOLDEN, result["evidence"])
+        self.assertEqual(found["ane_works"]["calls"], 20)
+        smoke = [c for c in mac.commands if c[4] == "omarchy-ane-smoke"]
+        self.assertEqual(smoke, [["timeout", "-k", "2", "60", "omarchy-ane-smoke", "--timeout", "50"]])
+
+    def test_a_wrong_output_fails_with_how_many_calls_differed(self):
+        wrong = {**SMOKE_PASS, "errors": 3, "reason": "call 4: output surface or runner status differs (0)"}
+        del wrong["sha256"][0:0]
+        result, _, _ = self.smoke_result(smoke=CommandResult(1, json.dumps(wrong) + "\n", "omarchy-ane-smoke: ...\n"))
+
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("the ANE gave a wrong result: 3 of 20 calls differ from the exact sum (call 4: output surface or runner status differs (0))", result["evidence"])
+
+    def test_a_hang_fails_and_does_not_hold_the_run(self):
+        result, found, _ = self.smoke_result(smoke=CommandResult(124, "", "", 60))
+
+        self.assertEqual(found["ane_works"], {"state": "timeout"})
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("did not finish within 60 s", result["evidence"][0])
+
+    def test_a_crash_or_garbage_instead_of_a_result_line_fails(self):
+        for code in (0, 1, 139):
+            result, _, _ = self.smoke_result(smoke=CommandResult(code, "not json\n", "Segmentation fault\n"))
+            self.assertEqual(result["status"], "fail", code)
+            self.assertIn("gave no result line: Segmentation fault", result["evidence"][0])
+
+    def test_no_omarchy_ane_installed_skips_and_says_what_to_install(self):
+        result, found, _ = self.smoke_result(smoke=None)
+
+        self.assertEqual(found["ane_works"], {"state": "missing"})
+        self.assertEqual(result["status"], "skip")
+        self.assertIn("omarchy-ane-smoke is not installed", result["evidence"][0])
+        self.assertIn("install the omarchy-ane package", result["evidence"][0])
+
+    def test_a_chip_without_a_program_or_a_missing_driver_file_skips_with_the_reason(self):
+        gone = {"name": "add-fixture", "chip": "t6030", "die": 0, "available": False, "reason": "no add fixture for t6030"}
+        result, _, _ = self.smoke_result(smoke=CommandResult(2, json.dumps(gone) + "\n", "omarchy-ane-smoke: unavailable: no add fixture for t6030\n"))
+
+        self.assertEqual(result["status"], "skip")
+        self.assertEqual(result["evidence"][0], "omarchy-ane-smoke could not run: no add fixture for t6030")
+
+    def test_an_older_tool_that_does_not_know_the_timeout_option_skips_it_does_not_blame_the_ane(self):
+        result, _, _ = self.smoke_result(smoke=CommandResult(2, "", "omarchy-ane-smoke: error: unrecognized arguments: --timeout 50\n"))
+
+        self.assertEqual(result["status"], "skip")
+        self.assertIn("gave no result line", result["evidence"][0])
+
+    def test_an_exit_zero_that_the_result_line_does_not_back_up_is_not_a_pass(self):
+        for change in ({"errors": 1}, {"sha256": [GOLDEN] * 19}, {"available": False}, {"golden_sha256": "nothex"}, {"errors": None}):
+            line = {**SMOKE_PASS, **change}
+            result, _, _ = self.smoke_result(smoke=CommandResult(0, json.dumps(line) + "\n", ""))
+            self.assertEqual(result["status"], "fail", change)
+
+    def test_no_enabled_ane_means_the_program_is_never_run(self):
+        for kwargs, wording in (({"ane": False}, "the ANE is not enabled (see ane.enabled), so no program was run"),):
+            result, found, mac = self.smoke_result(**kwargs)
+            self.assertEqual(result["status"], "skip")
+            self.assertEqual(result["evidence"], [wording])
+            self.assertFalse([c for c in mac.commands if c[4] == "omarchy-ane-smoke"])
+
+        class NoNode(FakeMac):
+            def run(self, argv):
+                if argv[4] == "find" and argv[5] == compute.DT_BASE:
+                    return CommandResult(0, "", "")
+                return super().run(argv)
+
+        mac = NoNode(ane=False)
+        result = compute.ane_works_result(mac.compute_snapshot())
+        self.assertEqual(result["status"], "skip")
+        self.assertIn("no ANE node", result["evidence"][0])
+        self.assertFalse([c for c in mac.commands if c[4] == "omarchy-ane-smoke"])
+
+    def test_a_snapshot_from_before_the_check_existed_is_skipped(self):
+        found = FakeMac().compute_snapshot()
+        del found["ane_works"]
+
+        self.assertEqual(compute.ane_works_result(found)["status"], "skip")
+
+    def test_the_section_reports_three_checks_and_skips_all_three_on_a_non_apple_machine(self):
+        self.assertEqual(compute.CHECK_IDS, ("gpu.mlx", "ane.enabled", "ane.works"))
+        self.assertIn("ane.works", ORDER)
+        ctx = context(FakeMac())
+        self.assertEqual([r["id"] for r in compute.run(ctx)], list(compute.CHECK_IDS))
+        self.assertEqual([r["status"] for r in compute.run(ctx)], ["pass", "pass", "pass"])
+        no_apple = FakeMac()
+        no_apple.files["/proc/device-tree/compatible"] = b"acme,board\0"
+        self.assertEqual([r["status"] for r in compute.run(context(no_apple))], ["skip", "skip", "skip"])
+
+    def test_the_catalogue_knows_the_check(self):
+        self.assertEqual(catalogue.parse(bundled.catalogue_text()).feature_for_check("ane.works")["id"], "neural-engine")
