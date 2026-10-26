@@ -2081,6 +2081,23 @@
       }
     },
     {
+      "id": "ane.works",
+      "kind": "automatic",
+      "status": "skip",
+      "evidence": [
+        "the Apple device tree couldn't be read, so nothing was collected"
+      ],
+      "classification": {
+        "outcome": "not-tested",
+        "feature": "neural-engine",
+        "layer": "asahi",
+        "expected": {
+          "asahi": "out-of-tree",
+          "aurora": "asahi"
+        }
+      }
+    },
+    {
       "id": "thermal.sensors",
       "kind": "automatic",
       "status": "skip",
@@ -2322,6 +2339,6 @@
   ],
   "signature": {
     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHWZLEbyxAyRBj1yRyeHbRhQvVhcrUqpMaNH7ivMU1DW",
-    "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgdZksRvLEDJEGPXJHJ4dtGFC9WF\nytSqkxo0fuK8xTUNYAAAAVb21hcmNoeS1tLXRlc3QtcmVwb3J0AAAAAAAAAAZzaGE1MTIA\nAABTAAAAC3NzaC1lZDI1NTE5AAAAQIyysX09650JvfuIEu95vSLNCD6hc8pBzepDXDvjuv\nc/dWNa8eO8MN9FeXeTE1E/Up8ejYImRIXMm4jVe8h0CQU=\n-----END SSH SIGNATURE-----"
+    "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgdZksRvLEDJEGPXJHJ4dtGFC9WF\nytSqkxo0fuK8xTUNYAAAAVb21hcmNoeS1tLXRlc3QtcmVwb3J0AAAAAAAAAAZzaGE1MTIA\nAABTAAAAC3NzaC1lZDI1NTE5AAAAQAdZtlZb+qBI7dgv8PbQzWotOA7DJefZIDX5BwCEjG\nQkTBJZkSkKntEf5di4wDRnDphRKOACnTIWkn1ASe1xYA8=\n-----END SSH SIGNATURE-----"
   }
 }
