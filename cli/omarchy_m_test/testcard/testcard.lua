@@ -4,23 +4,43 @@
 local shot, output = os.getenv("OMT_SHOT"), os.getenv("OMT_OUTPUT")
 local shown = false
 
--- hyprctl's answer as JSON text, or nil.
+local utils = require("mp.utils")
+
+-- hyprctl's answer, parsed, or nil.
 local function hypr(what)
   local r = mp.command_native({
     name = "subprocess", args = {"timeout", "5", "hyprctl", what, "-j"},
     playback_only = false, capture_stdout = true,
   })
-  return r.status == 0 and r.stdout or nil
+  return r.status == 0 and utils.parse_json(r.stdout) or nil
 end
 
--- OMT_WINDOWS: save the monitors and windows as they are when the screenshot is taken, so the CLI
+-- The listed fields of each entry, and nothing else: window titles and classes never leave hyprctl.
+local function pick(list, keys)
+  local out = {}
+  for _, entry in ipairs(list) do
+    local kept = {}
+    for _, key in ipairs(keys) do kept[key] = entry[key] end
+    out[#out + 1] = kept
+  end
+  return out
+end
+
+-- OMT_WINDOWS: save where the screen and the windows are when the screenshot is taken, so the CLI
 -- can tell a window above the video (a floating terminal) from a wrong colour. Best effort.
 local function save_windows()
   local path, monitors, clients = os.getenv("OMT_WINDOWS"), hypr("monitors"), hypr("clients")
   if not (path and monitors and clients) then return end
   local file = io.open(path, "w")
   if not file then return end
-  file:write('{"pid":', tostring(require("mp.utils").getpid()), ',"monitors":', monitors, ',"clients":', clients, '}')
+  local screens = pick(monitors, {"id", "name", "x", "y", "width", "height", "scale", "transform", "activeWorkspace", "specialWorkspace"})
+  for _, screen in ipairs(screens) do
+    screen.activeWorkspace = {id = (screen.activeWorkspace or {}).id}
+    screen.specialWorkspace = {id = (screen.specialWorkspace or {}).id}
+  end
+  local windows = pick(clients, {"pid", "mapped", "hidden", "at", "size", "workspace", "monitor", "floating", "pinned"})
+  for _, window in ipairs(windows) do window.workspace = {id = (window.workspace or {}).id} end
+  file:write(utils.format_json({pid = utils.getpid(), monitors = screens, clients = windows}))
   file:close()
 end
 
@@ -29,7 +49,7 @@ mp.register_event("playback-restart", function()
   shown = true
   -- Leave time for the fullscreen animation and the first frame to reach the screen.
   mp.add_timeout(1.5, function()
-    save_windows()
+    pcall(save_windows) -- the screenshot never waits on, or fails with, the window list
     local grim = mp.command_native({
       name = "subprocess", args = {"timeout", "10", "grim", "-s", "0.5", "-o", output, shot},
       playback_only = false, capture_stderr = true,

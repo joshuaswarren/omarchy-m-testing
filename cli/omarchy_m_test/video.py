@@ -12,19 +12,19 @@ mpv, and screenshots that screen with grim. Then:
   - mpv's log says whether hardware decode was used ("Using hardware
     decoding (vaapi-copy)"), and with which video output and GPU context:
     the mode, recorded in the evidence. Software decode fails the check.
+  - a floating or pinned window, or one on a special workspace (a terminal
+    above the video), shows in grim's screenshot. The card script also saves
+    where the screen and the windows are at that moment (positions and
+    flags only, no titles), and samples only where no such window is. A bar
+    they hide is not judged: when the bars in view are right, the check is
+    skipped with the reason, not failed. A wrong colour on a bar in view
+    still fails.
 
 mpv runs with the machine's own configuration (/etc/mpv/mpv.conf, then the
 user's mpv.conf), so the mode checked is the one videos play in. When that
 configuration leaves hardware decode off, --hwdec=auto-safe is added: the
 check is about hardware decode. Only the hwdec value is read from those
 files, and only it reaches the evidence.
-
-  - a floating or pinned window, or one on a special workspace (a terminal
-    above the video), shows in grim's screenshot. The card script also saves
-    hyprctl's window list at the moment of the screenshot, and samples only
-    where no such window is. A bar they hide is not judged: when the bars in
-    view are right, the check is skipped with the reason, not failed. A wrong
-    colour on a bar in view still fails.
 
 It claims nothing about tearing, frame pacing or VRR: one paused frame is
 checked.
