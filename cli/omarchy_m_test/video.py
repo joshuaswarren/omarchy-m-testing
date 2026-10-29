@@ -19,6 +19,13 @@ configuration leaves hardware decode off, --hwdec=auto-safe is added: the
 check is about hardware decode. Only the hwdec value is read from those
 files, and only it reaches the evidence.
 
+  - a floating or pinned window, or one on a special workspace (a terminal
+    above the video), shows in grim's screenshot. The card script also saves
+    hyprctl's window list at the moment of the screenshot, and samples only
+    where no such window is. A bar they hide is not judged: when the bars in
+    view are right, the check is skipped with the reason, not failed. A wrong
+    colour on a bar in view still fails.
+
 It claims nothing about tearing, frame pacing or VRR: one paused frame is
 checked.
 
@@ -32,6 +39,7 @@ that is removed when the section ends; none of it leaves the machine.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -66,6 +74,10 @@ BARS = (
 SAMPLE_X = (0.3, 0.7)
 SAMPLE_Y = (0.15, 0.40)
 SAMPLES_PER_SIDE = 16
+# A bar is judged only when this share of its samples is clear of windows.
+MIN_VISIBLE = 0.5
+# grim takes the screenshot at half the screen's logical size (testcard/testcard.lua).
+SHOT_SCALE = 0.5
 # How far a channel may be from the card: range, matrix and scaling
 # differences stay well inside it; green or garbled frames don't.
 TOLERANCE = 64
@@ -192,9 +204,13 @@ def _play(ctx: Context, directory: str, codec: str, label: str, check_id: str, r
         image = png.decode(ctx.host.read_file(f"{directory}/{codec}.png"))
     except (OSError, png.PngError) as error:
         return _skip(check_id, f"the screenshot couldn't be read ({error})", lines)
-    wrong, samples = _compare(image)
+    covers = _covers(_read_text(ctx.host, f"{directory}/{codec}.windows.json"), output, image)
+    wrong, hidden, samples = _compare(image, covers)
     lines.append(f"screenshot: {image.width}x{image.height}, each bar's median colour in its middle, {TOLERANCE} levels allowed per channel")
     lines += samples
+    if hidden and not wrong:
+        checked = len(BARS) - len(hidden)
+        return _skip(check_id, f"a window (floating or pinned) covers the test card; only {checked} of {len(BARS)} bars could be checked", lines)
     if wrong:
         lines.append(f"on screen: {len(wrong)} of {len(BARS)} bars in the wrong colour ({', '.join(wrong)}): green, blocky or garbled frames")
     else:
@@ -226,23 +242,68 @@ def _mode(log: str | None) -> tuple[str, bool]:
     return ", ".join(parts), used is not None
 
 
-def _compare(image: png.Image) -> tuple[list[str], list[str]]:
-    wrong, lines = [], []
+Rect = tuple[float, float, float, float]
+
+
+def _covers(text: str | None, output: str, image: png.Image) -> list[Rect]:
+    """Where, in the screenshot, a window above the full screen video is: from hyprctl's list taken with it.
+
+    Above the video: pinned, floating on the screen's workspace, or on its special workspace.
+    Tiled windows are behind a full screen window. Nothing is returned (so nothing is hidden)
+    when the list is missing, doesn't name the screen, or doesn't fit the screenshot.
+    """
+    try:
+        info = json.loads(text or "")
+        screen = next(m for m in info["monitors"] if m["name"] == output)
+        scale, special = float(screen["scale"]), screen["specialWorkspace"]["id"]
+        workspaces = {screen["activeWorkspace"]["id"], special} - {0}
+        logical = screen["width"] / scale, screen["height"] / scale
+        fits = screen.get("transform", 0) == 0 and all(abs(logical[i] * SHOT_SCALE - size) <= 2 for i, size in enumerate((image.width, image.height)))
+        rects = [_rect(c, screen) for c in info["clients"] if _above(c, info["pid"], screen["id"], workspaces, special)]
+    except (ValueError, KeyError, StopIteration, TypeError, ZeroDivisionError):
+        return []
+    return rects if fits else []
+
+
+def _above(client: dict, mpv_pid: int, monitor: int, workspaces: set, special: int) -> bool:
+    on_screen = client["mapped"] and not client["hidden"] and client["pid"] != mpv_pid and client["monitor"] == monitor
+    workspace = client["workspace"]["id"]
+    return on_screen and workspace in workspaces and (client["floating"] or client["pinned"] or workspace == special)
+
+
+def _rect(client: dict, screen: dict) -> Rect:
+    (x, y), (w, h) = client["at"], client["size"]
+    left, top = (x - screen["x"]) * SHOT_SCALE, (y - screen["y"]) * SHOT_SCALE
+    return left, top, left + w * SHOT_SCALE, top + h * SHOT_SCALE
+
+
+def _compare(image: png.Image, covers: list[Rect] = ()) -> tuple[list[str], list[str], list[str]]:
+    """The bars in the wrong colour, the bars windows hide, and the evidence line of each bar."""
+    wrong, hidden, lines = [], [], []
     y0, y1 = (int(image.height * f) for f in SAMPLE_Y)
     for index, (name, expected) in enumerate(BARS):
         x0, x1 = (int(image.width * (index + f) / len(BARS)) for f in SAMPLE_X)
-        seen = _median(image, x0, x1, y0, y1)
+        seen = _median(image, x0, x1, y0, y1, covers)
+        if seen is None:
+            hidden.append(name)
+            lines.append(f"{name} bar: covered by a window")
+            continue
         ok = all(abs(a - b) <= TOLERANCE for a, b in zip(seen, expected))
         if not ok:
             wrong.append(name)
         lines.append(f"{name} bar: expected {_hex(expected)}, saw {_hex(seen)}{'' if ok else ' (wrong)'}")
-    return wrong, lines
+    return wrong, hidden, lines
 
 
-def _median(image: png.Image, x0: int, x1: int, y0: int, y1: int) -> tuple[int, int, int]:
+def _median(image: png.Image, x0: int, x1: int, y0: int, y1: int, covers: list[Rect] = ()) -> tuple[int, int, int] | None:
+    """The median colour of a bar's samples that no window covers; None when fewer than MIN_VISIBLE of them are clear."""
     xs = sorted({x0 + (x1 - x0) * i // SAMPLES_PER_SIDE for i in range(SAMPLES_PER_SIDE)})
     ys = sorted({y0 + (y1 - y0) * i // SAMPLES_PER_SIDE for i in range(SAMPLES_PER_SIDE)})
-    pixels = [image.pixel(x, y) for y in ys for x in xs]
+    points = [(x, y) for y in ys for x in xs]
+    clear = [p for p in points if not any(l <= p[0] < r and t <= p[1] < b for l, t, r, b in covers)]
+    if len(clear) < len(points) * MIN_VISIBLE:
+        return None
+    pixels = [image.pixel(x, y) for x, y in clear]
     middle = len(pixels) // 2
     r, g, b = (sorted(channel)[middle] for channel in zip(*pixels))
     return r, g, b

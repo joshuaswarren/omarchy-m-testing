@@ -136,6 +136,7 @@ def mpv_log(hwdec: str | None, vo: str, context: str, codec: str = "h264", end: 
 def desktop(
     shot: bytes | None = CORRECT, log: str | None = None, system_conf: str | None = SHIPPED_CONF, user_conf: str | None = None,
     hwdec_args: tuple[str, ...] = (), returncode: int = 0, stderr: str = "", env: dict | None = None,
+    windows: dict | None = None,
 ) -> dict:
     """The recorded M2 at its Hyprland desktop, with the answers the video section gets."""
     rec = live_recording({"WAYLAND_DISPLAY": "wayland-1", **(env or {})})
@@ -151,6 +152,7 @@ def desktop(
     for codec in CODECS:
         rec["files"][f"{TEMP}/{codec}.log"] = {"text": log.replace("h264", codec)}
         rec["files"][f"{TEMP}/{codec}.png"] = None if shot is None else {"base64": base64.b64encode(shot).decode("ascii")}
+        rec["files"][f"{TEMP}/{codec}.windows.json"] = None if windows is None else {"text": json.dumps(windows)}
     return rec
 
 
@@ -344,6 +346,118 @@ class RecordModeTest(unittest.TestCase):
         recording = json.loads(host.written[RECORD_FILE])
         self.assertEqual(base64.b64decode(recording["files"][f"{TEMP}/h264.png"]["base64"]), GREEN)
         self.assertIn("Using hardware decoding (vaapi)", recording["files"][f"{TEMP}/h264.log"]["text"])
+
+
+# -- a window over the test card ----------------------------------------------------------
+# The captures are 358x201: half the logical size of a 716x402 screen at scale 1.
+
+MPV_PID = 4242
+SCREEN = {"id": 0, "name": "eDP-1", "x": 0, "y": 0, "width": 716, "height": 402, "scale": 1.0, "transform": 0,
+          "activeWorkspace": {"id": 1}, "specialWorkspace": {"id": 0}}
+
+
+def client(pid: int, at: tuple[int, int], size: tuple[int, int], floating: bool = False, pinned: bool = False, workspace: int = 1,
+           hidden: bool = False, monitor: int = 0) -> dict:
+    return {"pid": pid, "mapped": True, "hidden": hidden, "at": list(at), "size": list(size), "workspace": {"id": workspace},
+            "monitor": monitor, "floating": floating, "pinned": pinned, "fullscreen": 2 if pid == MPV_PID else 0}
+
+
+def windows(*others: dict, monitors: list | None = None) -> dict:
+    """What hyprctl said at the moment of the screenshot: mpv full screen, and these windows."""
+    return {"pid": MPV_PID, "monitors": [SCREEN] if monitors is None else monitors,
+            "clients": [client(MPV_PID, (0, 0), (716, 402), floating=True), *others]}
+
+
+TERMINAL = client(777, (100, 60), (500, 250), floating=True)   # image pixels x 50-300, y 30-155
+
+
+def with_window(shot: bytes, x0: int, y0: int, x1: int, y1: int, rgb: tuple[int, int, int] = (28, 28, 30)) -> bytes:
+    """The capture with a window's pixels over it, as grim sees a terminal above the video."""
+    image = png.decode(shot)
+    paint = bytes(rgb) * (x1 - x0)
+    rows = tuple(row[:3 * x0] + paint + row[3 * x1:] if y0 <= y < y1 else row for y, row in enumerate(image.rows))
+    return encode(png.Image(image.width, image.height, rows))
+
+
+UNDER_TERMINAL = with_window(CORRECT, 50, 30, 300, 155)
+
+
+class WindowOverTheCardTest(unittest.TestCase):
+    def test_a_floating_terminal_over_the_bars_is_not_a_failure_of_the_video(self):
+        checks = run(at_desktop(desktop(UNDER_TERMINAL, windows=windows(TERMINAL))))
+
+        for check_id in CHECKS:
+            with self.subTest(check_id):
+                check = checks[check_id]
+                self.assertEqual(check["status"], "skip")
+                evidence = "\n".join(check["evidence"])
+                self.assertIn("skipped: a window (floating or pinned) covers the test card", evidence)
+                self.assertIn("only 2 of 6 bars could be checked", evidence)
+                self.assertNotIn("in the wrong colour", evidence)
+                self.assertIn("red bar: expected #ff0000, saw #ff1800", evidence)
+                self.assertIn("green bar: covered by a window", evidence)
+
+    def test_without_the_window_list_the_same_capture_is_a_failure_as_before(self):
+        checks = run(at_desktop(desktop(UNDER_TERMINAL)))
+
+        self.assertEqual(checks["video.h264-on-screen"]["status"], "fail")
+        self.assertIn("in the wrong colour", "\n".join(checks["video.h264-on-screen"]["evidence"]))
+
+    def test_a_wrong_colour_on_a_bar_nothing_covers_still_fails(self):
+        under_terminal = with_window(GREEN, 50, 30, 300, 155)
+        checks = run(at_desktop(desktop(under_terminal, mpv_log("vaapi", "gpu-next", "waylandvk"), system_conf=ZERO_COPY_CONF,
+                                        windows=windows(TERMINAL))))
+
+        check = checks["video.h264-on-screen"]
+        self.assertEqual(check["status"], "fail")
+        self.assertIn("red bar: expected #ff0000, saw #006f00 (wrong)", check["evidence"])
+        self.assertIn("green, blocky or garbled frames", "\n".join(check["evidence"]))
+
+    def test_a_window_the_fullscreen_video_hides_does_not_hide_any_bar(self):
+        tiled = client(555, (0, 0), (716, 402))
+        behind = client(556, (100, 60), (500, 250), floating=True, workspace=2)
+        closed = client(557, (100, 60), (500, 250), floating=True, hidden=True)
+        elsewhere = client(558, (100, 60), (500, 250), floating=True, monitor=1)
+        checks = run(at_desktop(desktop(CORRECT, windows=windows(tiled, behind, closed, elsewhere))))
+
+        self.assertEqual(checks["video.h264-on-screen"]["status"], "pass")
+        self.assertIn("on screen: every bar in its colour", checks["video.h264-on-screen"]["evidence"])
+
+    def test_a_floating_window_clear_of_the_samples_changes_nothing(self):
+        corner = client(777, (560, 330), (150, 70), floating=True)
+        checks = run(at_desktop(desktop(with_window(CORRECT, 280, 165, 355, 200), windows=windows(corner))))
+
+        self.assertEqual(checks["video.h264-on-screen"]["status"], "pass")
+
+    def test_a_pinned_window_and_a_special_workspace_window_count_as_above_the_video(self):
+        pinned = client(701, (100, 60), (500, 250), pinned=True)
+        scratch = client(702, (100, 60), (500, 250), workspace=-98)
+        screen = {**SCREEN, "specialWorkspace": {"id": -98}}
+        for name, other in (("pinned", pinned), ("special workspace", scratch)):
+            with self.subTest(name):
+                checks = run(at_desktop(desktop(UNDER_TERMINAL, windows=windows(other, monitors=[screen]))))
+                self.assertEqual(checks["video.h264-on-screen"]["status"], "skip")
+
+    def test_a_screen_that_is_not_at_the_layout_origin_is_mapped_by_its_own_offset(self):
+        right = {**SCREEN, "x": 1920, "y": 0}
+        terminal = client(777, (2020, 60), (500, 250), floating=True)
+        checks = run(at_desktop(desktop(UNDER_TERMINAL, windows=windows(terminal, monitors=[right]))))
+
+        self.assertEqual(checks["video.h264-on-screen"]["status"], "skip")
+
+    def test_a_card_the_windows_cover_nearly_everywhere_is_skipped_not_passed(self):
+        cover = client(777, (0, 0), (716, 402), floating=True)
+        checks = run(at_desktop(desktop(with_window(CORRECT, 0, 0, 358, 201), windows=windows(cover))))
+
+        check = checks["video.h264-on-screen"]
+        self.assertEqual(check["status"], "skip")
+        self.assertIn("only 0 of 6 bars could be checked", "\n".join(check["evidence"]))
+
+    def test_a_window_list_that_does_not_fit_the_screenshot_is_ignored(self):
+        odd = {**SCREEN, "transform": 1}
+        checks = run(at_desktop(desktop(UNDER_TERMINAL, windows=windows(TERMINAL, monitors=[odd]))))
+
+        self.assertEqual(checks["video.h264-on-screen"]["status"], "fail")
 
 
 if __name__ == "__main__":

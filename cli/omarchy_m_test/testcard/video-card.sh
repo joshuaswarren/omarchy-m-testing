@@ -9,6 +9,8 @@
 # card: six solid colour bars, 1920x1080, BT.709, encoded by ffmpeg with
 # libx264 or libx265), DIR/CODEC.log (mpv's verbose log) and DIR/CODEC.png
 # (grim's screenshot of the built-in screen, at half its logical size).
+# DIR/CODEC.windows.json is hyprctl's monitors and windows at that moment, with mpv's
+# pid (best effort: the CLI uses it to tell a window above the video from a wrong colour).
 # Prints "output: NAME" (the built-in screen). mpv runs with the machine's own
 # configuration plus MPV_ARGS (the CLI adds --hwdec=auto-safe when that
 # configuration leaves hardware decode off).
@@ -44,7 +46,7 @@ bars+="[a][b][c][d][e][f]hstack=inputs=6,format=gbrp,scale=out_color_matrix=bt70
 ffmpeg -nostdin -hide_banner -loglevel error -y -f lavfi -i "$bars" -t 1 "${encoder[@]}" \
   -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv "$card" || exit 3
 
-OMT_SHOT="$dir/$codec.png" OMT_OUTPUT="$output" timeout 40 mpv "$@" \
+OMT_SHOT="$dir/$codec.png" OMT_OUTPUT="$output" OMT_WINDOWS="$dir/$codec.windows.json" timeout 40 mpv "$@" \
   --no-audio --fs --fs-screen-name="$output" --keepaspect=no --pause \
   --osd-level=0 --osc=no --no-input-default-bindings --input-vo-keyboard=no --cursor-autohide=always \
   --msg-level=all=v --log-file="$dir/$codec.log" --script="$here/testcard.lua" \
