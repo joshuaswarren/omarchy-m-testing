@@ -337,5 +337,21 @@ class ScrubbedPathTest(unittest.TestCase):
                      "/home/sam/.cache/omarchy-m-test/bench.short", "/home/sam/.cache/omarchy-m-test/bench.AbCd1234/secret.tmp"):
             self.assertEqual(privacy.Scrubber().scrub(path), "<home>", path)
 
+    def test_punctuation_inside_a_home_path_hides_what_follows_it(self):
+        for path in ("/home/sam/x,secret", "/home/sam/x;secret", "/home/sam/x:secret", "/home/sam/report(final).txt", "/home/sam/a[1]b", "/home/sam/{a}b",
+                     "/home/sam/a<b>c", "/home/sam,secret", "/Users/sam/x,secret", "/var/home/sam/x,secret", "/root/x,secret", "~/x,secret",
+                     "/home/sam/.cache/omarchy-m-test,secret", "/home/sam/.cache/omarchy-m-test/bench.AbCd1234,secret",
+                     "/home/sam/.cache/omarchy-m-test/bench.AbCd1234/benchmark.tmp:secret"):
+            self.assertEqual(privacy.Scrubber().scrub(path), "<home>", path)
+
+    def test_punctuation_around_a_home_path_stays(self):
+        for line, scrubbed in (("open(/home/sam/x): denied", "open(<home>): denied"), ("/home/sam/x: No such file", "<home>: No such file"),
+                               ("/home/sam/a, /home/sam/b", "<home>, <home>"), ('{"path":"/home/sam/x","mode":"r"}', '{"path":"<home>","mode":"r"}'),
+                               ("[/root/x]", "[<home>]"), ("(~/x),", "(<home>),"), ("see /home/sam/x;", "see <home>;"),
+                               ("--filename=/home/sam/.cache/omarchy-m-test/bench.AbCd1234/benchmark.tmp: done",
+                                "--filename=<home>/.cache/omarchy-m-test/bench.AbCd1234/benchmark.tmp: done")):
+            self.assertEqual(privacy.Scrubber().scrub(line), scrubbed, line)
+
+
 if __name__ == "__main__":
     unittest.main()
