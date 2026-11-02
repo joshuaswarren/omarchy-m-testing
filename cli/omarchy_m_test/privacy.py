@@ -211,11 +211,14 @@ _MODE = re.compile(r"\d+x\d+@\d+(?:\.\d+)?(?:Hz)?")
 
 
 # Home-directory paths: the account name and everything under it.
+_PATH_CHAR = r"[^\s'\"`:;,()\[\]{}<>]"
+# Punctuation only ends a path when no more of the path follows it, so "/home/sam/x,secret" goes whole and "(/home/sam/x)," keeps its brackets and comma.
+_PATH_STEP = rf"(?:{_PATH_CHAR}|[:;,()\[\]{{}}<>]+(?={_PATH_CHAR}))"
 # A recording has to replay the storage benchmark's commands, so its exact generated paths stay; anything else there is hidden.
-_rule(r"(?<![\w.~-])(?:/home|/Users|/var/home)/[^\s/'\"`:;,()\[\]{}<>]+(/\.cache/omarchy-m-test(?:/bench\.[A-Za-z0-9]{8}(?:/benchmark\.tmp)?)?)(?![^\s'\"`:;,()\[\]{}<>])", r"<home>\1")
-_rule(r"(?<![\w.~-])(?:/home|/Users|/var/home)/[^\s'\"`:;,()\[\]{}<>]+", "<home>")
-_rule(r"(?<![\w.-])/root/[^\s'\"`:;,()\[\]{}<>]*", "<home>")
-_rule(r"(?<![\w/])~/[^\s'\"`:;,()\[\]{}<>]*", "<home>")
+_rule(rf"(?<![\w.~-])(?:/home|/Users|/var/home)/[^\s/'\"`:;,()\[\]{{}}<>]+(/\.cache/omarchy-m-test(?:/bench\.[A-Za-z0-9]{{8}}(?:/benchmark\.tmp)?)?)(?!{_PATH_STEP})", r"<home>\1")
+_rule(rf"(?<![\w.~-])(?:/home|/Users|/var/home)/{_PATH_STEP}+", "<home>")
+_rule(rf"(?<![\w.-])/root/{_PATH_STEP}*", "<home>")
+_rule(rf"(?<![\w/])~/{_PATH_STEP}*", "<home>")
 # E-mail and user@host addresses.
 _rule(r"(?<![\w.%+-])([A-Za-z0-9._%+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)", _email)
 # Device-tree properties that carry per-unit values (dtc output).
