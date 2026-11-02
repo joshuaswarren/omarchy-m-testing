@@ -104,3 +104,7 @@ ssh-keygen -Y verify -f release/allowed_signers -I release@omarchy-m-testing.org
 - [Release tools](release/): build and signing setup.
 
 Report bugs and feature requests in this repository's GitHub issues.
+
+## Contributors
+
+Everyone credited so far: [CONTRIBUTORS.md](CONTRIBUTORS.md).
