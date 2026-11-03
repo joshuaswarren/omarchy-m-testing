@@ -52,8 +52,8 @@ class FiltersTest < ActionDispatch::IntegrationTest
     assert_equal 4, count
     assert_equal ids_where { |r| r["system"]["stack"] == "converged" }, listed(stack: "converged").sort
     assert_equal [], listed(stack: "mx-mac")
-    assert_equal PRODUCTION.size, listed(release: "4.0.0").size
-    assert_equal [], listed(release: "4.1.0")
+    assert_equal PRODUCTION.size, listed(release: "4.0.0-alpha").size
+    assert_equal [], listed(release: "4.0.0")
     assert_select ".dim", /No reports match these filters yet/
     assert_equal ids_where { |r| Report.new(body: r).build&.id == M1_AIR_BUILD }, listed(build: M1_AIR_BUILD).sort
     assert_equal listed(build: M1_AIR_BUILD).sort, listed(set: M1_AIR_SET).sort

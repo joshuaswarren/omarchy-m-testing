@@ -4,8 +4,8 @@ require "test_helper"
 # reports show up right away but colour a cell only once two or more distinct
 # machines agree.
 class MatrixTest < ActionDispatch::IntegrationTest
-  M2 = { board: "j416c", stack: "converged", version: "4.0.0" }.freeze
-  M1 = { board: "j314s", stack: "mx-mac", version: "4.0.2" }.freeze
+  M2 = { board: "j416c", stack: "converged", version: "4.0.0-alpha" }.freeze
+  M1 = { board: "j314s", stack: "mx-mac", version: "4.0.2-dev" }.freeze
 
   def cell(row, feature)
     css_select(%(tr.matrix-row[data-board="#{row[:board]}"][data-stack="#{row[:stack]}"][data-version="#{row[:version]}"] td[data-feature="#{feature}"])).sole
@@ -21,7 +21,7 @@ class MatrixTest < ActionDispatch::IntegrationTest
     assert_equal "unconfirmed", state(M2, "gpu")
     assert_includes cell(M2, "gpu")["class"], "cell-unconfirmed cell-hint-works"
     assert_match "community, unconfirmed: 1 machine works", cell(M2, "gpu")["title"]
-    assert_select "tr.matrix-row .row-meta", "converged 4.0.0 · 1 report"
+    assert_select "tr.matrix-row .row-meta", "converged 4.0.0-alpha · 1 report"
 
     get "/reports"
     assert_select "tr.report-row .badge-community", "community"
@@ -32,7 +32,7 @@ class MatrixTest < ActionDispatch::IntegrationTest
 
     get "/matrix", params: { group: "build" }
     assert_equal "unconfirmed", state(M2, "gpu")
-    assert_select "tr.matrix-row .row-meta", "converged 4.0.0 · 2 reports"
+    assert_select "tr.matrix-row .row-meta", "converged 4.0.0-alpha · 2 reports"
   end
 
   test "two distinct machines agreeing colour the cell" do
@@ -112,7 +112,7 @@ class MatrixTest < ActionDispatch::IntegrationTest
     get "/matrix", params: { group: "build" }
     assert_select "tr.matrix-row", 3
     assert_select %(tr.matrix-row[data-board="j416c"]), 2
-    assert_equal [ "4.1.0", "4.0.0" ], css_select(%(tr.matrix-row[data-board="j416c"])).map { |row| row["data-version"] }
+    assert_equal [ "4.1.0", "4.0.0-alpha" ], css_select(%(tr.matrix-row[data-board="j416c"])).map { |row| row["data-version"] }
     assert_select "th.feature-head", Catalogue.tested_features.size
 
     get "/matrix", params: { group: "build", stack: "mx-mac" }

@@ -106,7 +106,7 @@ class RegressionsTest < ActionDispatch::IntegrationTest
     gpu = css_select(%(tr.matrix-row[data-board="#{M2}"][data-version="4.1.0"] td[data-feature="gpu"])).sole
     assert_equal "regression", gpu["data-state"]
     assert_includes gpu["class"], "cell-regression"
-    assert_equal "works", css_select(%(tr.matrix-row[data-board="#{M2}"][data-version="4.0.0"] td[data-feature="gpu"])).sole["data-state"]
+    assert_equal "works", css_select(%(tr.matrix-row[data-board="#{M2}"][data-version="4.0.0-alpha"] td[data-feature="gpu"])).sole["data-state"]
     assert_select ".legend li", /regression/
     assert_select ".legend li", /doesn't work/
   end
