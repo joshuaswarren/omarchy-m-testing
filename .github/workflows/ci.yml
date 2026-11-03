@@ -79,7 +79,8 @@ jobs:
 
   site:
     name: Site (Seam B)
-    runs-on: ubuntu-latest
+    # Newer images only get the latest Ruby patch from setup-ruby, not site/.ruby-version's.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17
