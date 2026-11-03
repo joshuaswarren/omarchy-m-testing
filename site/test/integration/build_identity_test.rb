@@ -34,8 +34,8 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
       assert_select report_row(id), "td.build-cell a.build-id[title=?]", build["words"]
       assert_equal build["words"], Report.find_by!(public_id: id).build.words
     end
-    # Every one of them is "converged 4.0.0" by its release number.
-    assert_equal [ "converged 4.0.0" ], css_select("tr.report-row td:nth-child(3)").map(&:text).uniq
+    # Every one of them is "converged 4.0.0-alpha" by its release number.
+    assert_equal [ "converged 4.0.0-alpha" ], css_select("tr.report-row td:nth-child(3)").map(&:text).uniq
 
     get "/reports", params: { build: M3_BUILD }
     assert_equal [ "report-#{M3}" ], css_select("tr.report-row").map { |row| row["id"] }
@@ -104,7 +104,7 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
     store_production
 
     get "/models/j613"
-    label = "converged 4.0.0 · build #{BUILDS[M3]["words"]}"
+    label = "converged 4.0.0-alpha · build #{BUILDS[M3]["words"]}"
     assert_select "th.config-head a[title=?]", label, "#1"
     assert_select ".configuration-key li#configuration-1", label
     assert_select "tr.report-row td.build-cell[data-build=?]", M3_BUILD
@@ -227,6 +227,6 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
 
     get "/api/v1/matrix.json"
     row = response.parsed_body["rows"].find { |r| r["board"] == "j613" }
-    assert_equal [ "4.0.0", M3_BUILD ], [ row["version"], row.dig("build", "id") ]
+    assert_equal [ "4.0.0-alpha", M3_BUILD ], [ row["version"], row.dig("build", "id") ]
   end
 end

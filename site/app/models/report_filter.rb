@@ -6,7 +6,7 @@
 # Which runs:
 #   build     a build (Build#matches?: its runtime id, label or words)
 #   set       the candidate set the build is on (Build#set)
-#   release   the Omarchy release (Report#omarchy_version, "4.0.0")
+#   release   the Omarchy release (Report#omarchy_version, "4.0.0", "4.0.0-dev")
 #   kernel    the running kernel release (Report#kernel, uname -r)
 #   stack     the stack (CompatibilityMatrix::STACKS)
 #   model     a Mac model, by board ("j416c")

@@ -39,7 +39,7 @@ class IssuePrefillTest < ActionDispatch::IntegrationTest
 
     repo, title, body = issue_in("li#check-setup\\.first-boot-hardware")
     assert_equal "omacom/omarchy-mac", repo
-    assert_equal "First-boot hardware setup: doesn't work, but should on this Mac · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0", title
+    assert_equal "First-boot hardware setup: doesn't work, but should on this Mac · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0-alpha", title
     assert_includes body, "Report: #{uploaded["report_url"]}"
     assert_includes body, "Apple MacBook Pro (16-inch, M2 Max, 2023), M2 Max (t6021, board j416c)"
     assert_includes body, "- Kernel: 7.1.12-2-2-ARCH, linux-aurora 7.1.12.aurora2-2"
@@ -61,12 +61,12 @@ class IssuePrefillTest < ActionDispatch::IntegrationTest
     get path_of(failing["report_url"])
     repo, title, body = issue_in("li#check-gpu\\.driver")
     assert_equal "omacom/linux", repo
-    assert_equal "Regression: GPU · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0", title
+    assert_equal "Regression: GPU · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0-alpha", title
     assert_includes body, "Last verified pass on the same model and stack: #{pass["report_url"]}"
 
     get "/gaps"
     repo, title, body = issue_in(%(#regressions tr.regression-row[data-feature="gpu"]))
-    assert_equal [ "omacom/linux", "Regression: GPU · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0" ], [ repo, title ]
+    assert_equal [ "omacom/linux", "Regression: GPU · MacBook Pro (16-inch, M2 Max, 2023), converged 4.0.0-alpha" ], [ repo, title ]
     assert_includes body, "Last verified pass: #{pass["report_url"]}"
     assert_includes body, "Runs with the regression:\n- #{failing["report_url"]}"
   end

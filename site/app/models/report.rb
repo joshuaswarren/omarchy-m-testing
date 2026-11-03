@@ -82,15 +82,13 @@ class Report < ApplicationRecord
     system.fetch("packages").find { |package| package["name"] == name }&.fetch("version")
   end
 
-  # The release a run is on, coarse enough that two machines on the same
-  # release share it: the leading dotted numbers of the Omarchy package
-  # ("4.0.0.alpha.quattro.r179...-1" is 4.0.0), or the distro for a reference run.
+  # The release a run is on (OmarchyRelease), or the distro for a reference run.
   def omarchy_version
     return system.fetch("distro") if stack == "reference"
 
     OMARCHY_PACKAGES.each do |name|
       version = package_version(name) or next
-      return version[/\A\d+(\.\d+)*/] || version
+      return OmarchyRelease.of(version)
     end
     "unknown"
   end
