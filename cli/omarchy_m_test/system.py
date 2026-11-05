@@ -79,6 +79,7 @@ _COMMIT = re.compile(r"\.g([0-9a-f]{7,40})(?![0-9a-f])")
 _STAMP = re.compile(r"-\d+\.(\d+)$")
 RUNTIME_PACKAGES = ("omarchy", "omarchy-settings", "omarchy-dev")
 _DISTRO = re.compile(r"[a-z0-9][a-z0-9._-]{0,39}")
+_RELEASE = re.compile(r"[A-Za-z0-9_+][A-Za-z0-9._+-]{0,127}")
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class System:
     image: dict[str, str]  # allowlisted keys of the image's target record; empty without one
     encryption: str  # on, off or unknown
     root_chain: tuple[str, ...]  # "TYPE FSTYPE" from the root filesystem down to its disk
+    running_kernel: str | None = None  # uname -r of the booted kernel; read where linux-aurora is installed
 
     @property
     def is_omarchy(self) -> bool:
@@ -107,7 +109,9 @@ class System:
     def build(self) -> str | None:
         """The build this run is on, e.g. "f60e1ba.2026092602 (linux-aurora 7.1.12.aurora2-11, omarchy-mac-boot 20260926-1)"
         or, on an image naming its set, "apple-test-f22c43fb7903-20260928 (runtime f22c43f.…, …, built 2026-09-28T03:04:05Z)"."""
-        return build_words(self.packages, self.candidate_set, self.image) if self.is_omarchy else None
+        if not self.is_omarchy:
+            return None
+        return build_words(self.packages, self.candidate_set, self.image, self.running_kernel)
 
     def report(self, boot_loader: str) -> dict:
         block = {
@@ -121,6 +125,8 @@ class System:
             block["candidate_set"] = self.candidate_set
         if self.image:
             block["image"] = dict(self.image)
+        if self.running_kernel:
+            block["running_kernel"] = self.running_kernel
         return block
 
 
@@ -140,7 +146,8 @@ def build_id(packages: dict[str, str]) -> str | None:
     return found or next((packages[name] for name in (*RUNTIME_PACKAGES, "omarchy-mac") if name in packages), None)
 
 
-def build_words(packages: dict[str, str], candidate_set: str | None = None, image: dict | None = None) -> str | None:
+def build_words(packages: dict[str, str], candidate_set: str | None = None, image: dict | None = None,
+                running_kernel: str | None = None) -> str | None:
     """The build a run is on, as the site words it (Build#words): the image's candidate set when it names one,
     else build_id; then the runtime build (under a set), the kernel and boot package, without the build's
     stamp, and when the image was built and its package set digest (12 characters), which together name the
@@ -152,7 +159,9 @@ def build_words(packages: dict[str, str], candidate_set: str | None = None, imag
     extras = [f"runtime {identity}"] if candidate_set else []
     for name in ("linux-aurora", "omarchy-mac-boot"):
         version = packages.get(name)
-        if version:
+        if name == "linux-aurora" and running_kernel:
+            extras.append(f"running kernel {running_kernel}")
+        elif version:
             if stamp and version.endswith(f".{stamp}"):
                 version = version[: -len(stamp) - 1]
             extras.append(f"{name} {version}")
@@ -200,7 +209,17 @@ def detect(host: Host) -> System:
         image=_image(host),
         encryption=encryption,
         root_chain=tuple(chain or ()),
+        running_kernel=_running_kernel(host, packages),
     )
+
+
+def _running_kernel(host: Host, packages: dict[str, str]) -> str | None:
+    """The release of the booted kernel, read only where linux-aurora is installed: the label names it."""
+    if "linux-aurora" not in packages:
+        return None
+    result = host.run(["uname", "-r"])
+    release = result.stdout.strip()
+    return release if result.returncode == 0 and _RELEASE.fullmatch(release) else None
 
 
 def _key_values(host: Host, path: str) -> dict[str, str] | None:

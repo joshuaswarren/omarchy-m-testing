@@ -19,6 +19,7 @@
     "distro": "archarm",
     "boot_loader": "unknown",
     "encryption": "on",
+    "running_kernel": "7.1.12-2-10-ARCH",
     "image": {
       "format": "1",
       "platform": "apple-silicon"

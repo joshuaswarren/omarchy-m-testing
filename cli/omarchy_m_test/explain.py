@@ -69,5 +69,7 @@ def _build(system) -> str | None:
         return None
     image = system.get("image") if isinstance(system.get("image"), dict) else {}
     candidate_set = system.get("candidate_set") or image.get("candidate_set")
+    running = system.get("running_kernel")
     return build_words(packages, candidate_set if isinstance(candidate_set, str) else None,
-                       {key: value for key, value in image.items() if isinstance(value, str)})
+                       {key: value for key, value in image.items() if isinstance(value, str)},
+                       running if isinstance(running, str) else None)
