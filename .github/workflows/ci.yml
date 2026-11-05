@@ -59,8 +59,7 @@ jobs:
 
   site:
     name: Site (Seam B)
-    # shortcut: ruby 3.4.7 has no ubuntu-26.04 build; set .ruby-version to a 3.4 patch that has one, then use ubuntu-latest again
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17
