@@ -78,7 +78,6 @@ _SYSTEM = {
     "boot_loader": True,
     "encryption": True,
     "candidate_set": True,
-    "running_kernel": True,
     # The image's build record: only the keys system.IMAGE_KEYS reads (the schema lists the same).
     "image": {key: True for key in IMAGE_KEYS},
     "packages": [{"name": True, "version": True}],

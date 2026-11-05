@@ -55,7 +55,6 @@
         "boot_loader": { "enum": ["limine", "grub", "unknown"] },
         "encryption": { "description": "Whether the root filesystem is on an encrypted volume.", "enum": ["on", "off", "unknown"] },
         "candidate_set": { "description": "The candidate set a candidate image was built from: the candidate_set of the image's target record (image/target or, after first boot, image/target.booted), else of the factory seal. Absent without a target record.", "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
-        "running_kernel": { "description": "The release of the kernel the Mac booted (uname -r), read where linux-aurora is installed; the build label names it. Absent otherwise.", "type": "string", "pattern": "^[A-Za-z0-9_+][A-Za-z0-9._+-]{0,127}$" },
         "image": {
           "description": "The image's own build record: these keys of its target record (/var/lib/omarchy/image/target, or image/target.booted after the first boot), as the image builder writes them. Absent without a target record; older images have only format and platform.",
           "type": "object",

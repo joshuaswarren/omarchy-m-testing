@@ -44,7 +44,7 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
   test "other package sets and image records are worded as the CLI words them" do
     GOLDEN_BUILDS.fetch("examples").each do |example|
       image = example.slice("built", "package_set_sha256")
-      build = Build.new(example["packages"], candidate_set: example["candidate_set"], image:)
+      build = Build.new(example["packages"], candidate_set: example["candidate_set"], image:, running_kernel: example["kernel"])
       assert_equal example["words"], build.words, example["why"]
     end
   end
@@ -55,7 +55,7 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
     get "/reports/#{M3}"
     assert_response :success
     assert_select "dd#build .build-id", M3_BUILD
-    assert_select "dd#build", /linux-aurora 7\.1\.12\.aurora2-11 · omarchy-mac-boot 20260926-1 · tester 0\.1\.8/
+    assert_select "dd#build", /running kernel 7\.1\.12-2-11-ARCH · omarchy-mac-boot 20260926-1 · tester 0\.1\.8/
     assert_select "details#packages[open] tr", 13
     assert_select "details#packages tr td", "4.0.0.alpha.quattro.r1790450903.gf60e1ba4c476-1.2026092602"
     # No image record in these reports.
@@ -86,8 +86,8 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
     assert_equal builds.uniq, builds
     assert_equal BUILDS.values.map { |build| build["build"] }.uniq.sort, css_select("tr.matrix-row").map { |row| row["data-build"] }.uniq.sort
     # The M2 Max's runtime with a kernel installed by hand is its own row.
-    assert_equal [ "build 1937418.362376005140001 (linux-aurora 7.1.12.aurora2-10, omarchy-mac-boot 20260926-1)",
-                   "build 1937418.362376005140001 (linux-aurora 7.1.12.aurora2-10.90, omarchy-mac-boot 20260926-1)" ],
+    assert_equal [ "build 1937418.362376005140001 (running kernel 7.1.12-2-10-ARCH, omarchy-mac-boot 20260926-1)",
+                   "build 1937418.362376005140001 (running kernel 7.1.12-2-10.90-t90-ARCH, omarchy-mac-boot 20260926-1)" ],
                  builds.select { |board, _| board == "j416c" }.map(&:last).sort
 
     get "/matrix", params: { build: M1_AIR_BUILD }
@@ -146,14 +146,14 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
   test "a run on an image naming its set is labelled by the set, counted for it, and shows the image record" do
     body = upload_report on_new_image
     assert_response :created
-    words = "#{SET} (runtime 1937418.362376005140001, linux-aurora 7.1.12.aurora2-10, omarchy-mac-boot 20260926-1, " \
+    words = "#{SET} (runtime 1937418.362376005140001, running kernel 7.1.12-2-10-ARCH, omarchy-mac-boot 20260926-1, " \
             "built 2026-09-28T03:04:05Z, package set abababababab)"
     assert_equal words, Report.sole.build.words
 
     get path_of(body["report_url"])
     assert_select "dd#build .build-id", SET
     assert_select "dd#build a[href=?]", "/candidates/#{SET}"
-    assert_select "dd#build", /runtime 1937418\.362376005140001 · linux-aurora 7\.1\.12\.aurora2-10 · omarchy-mac-boot 20260926-1 · built 2026-09-28T03:04:05Z/
+    assert_select "dd#build", /runtime 1937418\.362376005140001 · running kernel 7\.1\.12-2-10-ARCH · omarchy-mac-boot 20260926-1 · built 2026-09-28T03:04:05Z/
     assert_select "dd#image", "format 1, platform apple-silicon, candidate_set #{SET}, candidate_source_commit 1937418f520b, " \
                               "builder_commit c6fedc32c111, builder_tree_clean true, image_profile test, package_set_sha256 abababababab, " \
                               "built 2026-09-28T03:04:05Z"
@@ -165,6 +165,12 @@ class BuildIdentityTest < ActionDispatch::IntegrationTest
 
     get "/matrix"
     assert_select "#build-filters a[data-build=?]", "1937418.362376005140001", SET
+  end
+
+  test "the words name the booted kernel the report recorded, not the installed package" do
+    upload_report golden("m2-max-converged")
+    assert_response :created
+    assert_equal "1937418.362376005140001 (running kernel 7.1.12-2-10-ARCH, omarchy-mac-boot 20260926-1)", Report.sole.build.words
   end
 
   test "two images of one set are two builds: the image's package set and build time tell them apart" do

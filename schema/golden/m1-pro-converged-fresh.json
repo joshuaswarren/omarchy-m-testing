@@ -19,7 +19,6 @@
     "distro": "archarm",
     "boot_loader": "limine",
     "encryption": "on",
-    "running_kernel": "7.1.12-2-11-ARCH",
     "image": {
       "format": "1",
       "platform": "apple-silicon"

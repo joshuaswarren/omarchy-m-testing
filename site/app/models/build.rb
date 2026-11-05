@@ -30,7 +30,7 @@ class Build
   COMMIT = /\.g([0-9a-f]{7,40})(?![0-9a-f])/
   STAMP = /-\d+\.(\d+)\z/
 
-  attr_reader :id, :commit, :stamp, :kernel, :boot, :candidate_set, :image, :tool_version
+  attr_reader :id, :commit, :stamp, :kernel, :running_kernel, :boot, :candidate_set, :image, :tool_version
 
   def self.for(report)
     return if report.stack == "reference"
@@ -38,7 +38,8 @@ class Build
     packages = report.system.fetch("packages", []).to_h { |package| [ package["name"], package["version"] ] }
     image = report.system["image"].is_a?(Hash) ? report.system["image"] : {}
     image = image.sort_by { |key, _| [ IMAGE_KEYS.index(key) || IMAGE_KEYS.size, key ] }.to_h
-    build = new(packages, candidate_set: report.candidate_set || image["candidate_set"], image:, tool_version: report.tool_version)
+    build = new(packages, candidate_set: report.candidate_set || image["candidate_set"], image:, tool_version: report.tool_version,
+                running_kernel: report.machine["kernel"])
     build if build.present?
   end
 
@@ -48,7 +49,7 @@ class Build
            .map { |_key, runs| [ runs.first.build, runs ] }
   end
 
-  def initialize(packages, candidate_set: nil, image: {}, tool_version: nil)
+  def initialize(packages, candidate_set: nil, image: {}, tool_version: nil, running_kernel: nil)
     @packages = packages
     runtime = RUNTIME_PACKAGES.filter_map { |name| packages[name] }.first
     @commit = runtime && runtime[COMMIT, 1]&.first(7)
@@ -60,6 +61,7 @@ class Build
     @candidate_set = candidate_set
     @image = image
     @tool_version = tool_version
+    @running_kernel = running_kernel
   end
 
   def present? = id.present?
@@ -69,13 +71,17 @@ class Build
 
   def built = image["built"]
 
-  # "f60e1ba.2026092602 (linux-aurora 7.1.12.aurora2-11, omarchy-mac-boot 20260926-1)", or on an image naming its
-  # set "apple-test-f22c43fb7903-20260928 (runtime f22c43f.…, linux-aurora …, omarchy-mac-boot …, built …)":
+  # The kernel as the pages name it: the booted kernel the report recorded, else the installed linux-aurora version.
+  def kernel_words = running_kernel ? "running kernel #{running_kernel}" : ("linux-aurora #{kernel}" if kernel)
+
+  # "f60e1ba.2026092602 (running kernel 7.1.12-2-11-ARCH, omarchy-mac-boot 20260926-1)", or on an image naming its
+  # set "apple-test-f22c43fb7903-20260928 (runtime f22c43f.…, running kernel …, omarchy-mac-boot …, built …)":
   # the CLI shows the same (system.build_words).
   def words
     extras = []
     extras << "runtime #{id}" if candidate_set
-    extras += { "linux-aurora" => kernel, "omarchy-mac-boot" => boot }.filter_map { |name, version| "#{name} #{version}" if version }
+    extras << kernel_words if kernel_words
+    extras += { "omarchy-mac-boot" => boot }.filter_map { |name, version| "#{name} #{version}" if version }
     extras << "built #{built}" if built
     extras << "package set #{image["package_set_sha256"].first(12)}" if image["package_set_sha256"]
     extras.any? ? "#{label} (#{extras.join(", ")})" : label

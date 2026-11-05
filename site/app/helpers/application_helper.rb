@@ -105,7 +105,7 @@ module ApplicationHelper
     parts << "runtime #{build.id}" if long && build.candidate_set
     parts << tag.span(safe_join([ "set ", candidate_link(build.set) ]), title: "matched by its omarchy package") if build.matched_set
     if long
-      parts << "linux-aurora #{build.kernel}" if build.kernel
+      parts << build.kernel_words if build.kernel_words
       parts << "omarchy-mac-boot #{build.boot}" if build.boot
       parts << "built #{build.built}" if build.built
       parts << "tester #{report.tool_version}" if report.tool_version

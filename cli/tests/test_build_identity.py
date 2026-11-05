@@ -62,17 +62,18 @@ class ProductionBuildsTest(unittest.TestCase):
 
     def test_the_builds_tell_apart_what_the_release_number_doesnt(self):
         # Every one of these reports is "4.0.0" by its release number.
-        self.assertEqual(BUILDS[M3]["words"], "f60e1ba.2026092602 (linux-aurora 7.1.12.aurora2-11, omarchy-mac-boot 20260926-1)")
+        self.assertEqual(BUILDS[M3]["words"], "f60e1ba.2026092602 (running kernel 7.1.12-2-11-ARCH, omarchy-mac-boot 20260926-1)")
         self.assertEqual(sorted({build["build"] for build in BUILDS.values()}), [
             "0052582.362956774610001", "1937418.362376005140001", "99ace40.361571887310001", "f60e1ba.2026092602",
         ])
         # The same runtime with a kernel installed by hand is a different build to look at.
-        self.assertIn("linux-aurora 7.1.12.aurora2-10.90", BUILDS["GENBn2WpjrF6LYeXjKXCxZDW"]["words"])
+        self.assertIn("running kernel 7.1.12-2-10.90-t90-ARCH", BUILDS["GENBn2WpjrF6LYeXjKXCxZDW"]["words"])
 
     def test_other_package_sets_and_image_records_word_their_build_as_the_site_does(self):
         for example in GOLDEN_BUILDS["examples"]:
             with self.subTest(example["why"]):
                 report = copy.deepcopy(production(M3))
+                report["machine"]["kernel"] = example["kernel"]
                 report["system"]["packages"] = [{"name": name, "version": version} for name, version in example["packages"].items()]
                 if example.get("candidate_set"):
                     report["system"]["candidate_set"] = example["candidate_set"]
@@ -222,7 +223,7 @@ class RunningKernelTest(unittest.TestCase):
     def test_the_build_label_names_the_booted_kernel(self):
         mac, report = run(self.booted(self.BOOTED))
 
-        self.assertEqual(report["system"]["running_kernel"], self.BOOTED)
+        self.assertEqual(report["machine"]["kernel"], self.BOOTED)
         line = next(text for text in mac.output.splitlines() if text.startswith("Build tested:"))
         self.assertIn(f"running kernel {self.BOOTED}", line)
         self.assertNotIn("linux-aurora 7.1.12.aurora2-2", line)
