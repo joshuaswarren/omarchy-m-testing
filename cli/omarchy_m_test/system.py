@@ -104,10 +104,12 @@ class System:
             words += f", candidate set {self.candidate_set}"
         return words
 
-    def build(self) -> str | None:
+    def build(self, kernel: str | None = None) -> str | None:
         """The build this run is on, e.g. "f60e1ba.2026092602 (linux-aurora 7.1.12.aurora2-11, omarchy-mac-boot 20260926-1)"
         or, on an image naming its set, "apple-test-f22c43fb7903-20260928 (runtime f22c43f.…, …, built 2026-09-28T03:04:05Z)"."""
-        return build_words(self.packages, self.candidate_set, self.image) if self.is_omarchy else None
+        if not self.is_omarchy:
+            return None
+        return build_words(self.packages, self.candidate_set, self.image, kernel)
 
     def report(self, boot_loader: str) -> dict:
         block = {
@@ -140,7 +142,8 @@ def build_id(packages: dict[str, str]) -> str | None:
     return found or next((packages[name] for name in (*RUNTIME_PACKAGES, "omarchy-mac") if name in packages), None)
 
 
-def build_words(packages: dict[str, str], candidate_set: str | None = None, image: dict | None = None) -> str | None:
+def build_words(packages: dict[str, str], candidate_set: str | None = None, image: dict | None = None,
+                kernel: str | None = None) -> str | None:
     """The build a run is on, as the site words it (Build#words): the image's candidate set when it names one,
     else build_id; then the runtime build (under a set), the kernel and boot package, without the build's
     stamp, and when the image was built and its package set digest (12 characters), which together name the
@@ -152,7 +155,9 @@ def build_words(packages: dict[str, str], candidate_set: str | None = None, imag
     extras = [f"runtime {identity}"] if candidate_set else []
     for name in ("linux-aurora", "omarchy-mac-boot"):
         version = packages.get(name)
-        if version:
+        if name == "linux-aurora" and kernel:
+            extras.append(f"running kernel {kernel}")
+        elif version:
             if stamp and version.endswith(f".{stamp}"):
                 version = version[: -len(stamp) - 1]
             extras.append(f"{name} {version}")

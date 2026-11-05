@@ -62,17 +62,18 @@ class ProductionBuildsTest(unittest.TestCase):
 
     def test_the_builds_tell_apart_what_the_release_number_doesnt(self):
         # Every one of these reports is "4.0.0" by its release number.
-        self.assertEqual(BUILDS[M3]["words"], "f60e1ba.2026092602 (linux-aurora 7.1.12.aurora2-11, omarchy-mac-boot 20260926-1)")
+        self.assertEqual(BUILDS[M3]["words"], "f60e1ba.2026092602 (running kernel 7.1.12-2-11-ARCH, omarchy-mac-boot 20260926-1)")
         self.assertEqual(sorted({build["build"] for build in BUILDS.values()}), [
             "0052582.362956774610001", "1937418.362376005140001", "99ace40.361571887310001", "f60e1ba.2026092602",
         ])
         # The same runtime with a kernel installed by hand is a different build to look at.
-        self.assertIn("linux-aurora 7.1.12.aurora2-10.90", BUILDS["GENBn2WpjrF6LYeXjKXCxZDW"]["words"])
+        self.assertIn("running kernel 7.1.12-2-10.90-t90-ARCH", BUILDS["GENBn2WpjrF6LYeXjKXCxZDW"]["words"])
 
     def test_other_package_sets_and_image_records_word_their_build_as_the_site_does(self):
         for example in GOLDEN_BUILDS["examples"]:
             with self.subTest(example["why"]):
                 report = copy.deepcopy(production(M3))
+                report["machine"]["kernel"] = example["kernel"]
                 report["system"]["packages"] = [{"name": name, "version": version} for name, version in example["packages"].items()]
                 if example.get("candidate_set"):
                     report["system"]["candidate_set"] = example["candidate_set"]
@@ -96,7 +97,7 @@ class RunShowsItsBuildTest(unittest.TestCase):
     def test_the_run_names_its_build_before_the_checks_and_with_the_report(self):
         mac, _ = run(M2_MAX)
 
-        words = "99ace40.361571887310001 (linux-aurora 7.1.12.aurora2-2, omarchy-mac-boot 20260925-3)"
+        words = "99ace40.361571887310001 (running kernel 7.1.12-2-2-ARCH, omarchy-mac-boot 20260925-3)"
         self.assertIn(f"Build: {words}.", mac.output)
         self.assertIn(f"Build tested: {words}; omarchy-m-test ", mac.output)
         self.assertLess(mac.output.index(f"Build: {words}"), mac.output.index("Build tested:"))
@@ -134,7 +135,8 @@ class ImageRecordTest(unittest.TestCase):
             "builder_tree_clean": "true", "image_profile": "test", "package_set_sha256": "ab" * 32, "built": "2026-09-28T03:04:05Z",
         })
         # The set names the build first; the runtime build and when the image was built follow.
-        self.assertIn("Build: apple-test-f22c43fb7903-20260928 (runtime 99ace40.361571887310001, linux-aurora 7.1.12.aurora2-2, "
+        self.assertIn("Build: apple-test-f22c43fb7903-20260928 (runtime 99ace40.361571887310001, "
+                      "running kernel 7.1.12-2-2-ARCH, "
                       "omarchy-mac-boot 20260925-3, built 2026-09-28T03:04:05Z, package set abababababab).", mac.output)
 
     def test_other_keys_and_values_of_the_wrong_shape_are_left_out(self):
@@ -206,6 +208,33 @@ class M3GpuGapsTest(unittest.TestCase):
         self.assertEqual(vulkan["bound"]["status"], "pass")
         self.assertEqual(vulkan["unbound"]["status"], "fail")
         self.assertIn("no GPU is bound to the asahi GPU driver, so it has no Apple GPU to use", vulkan["unbound"]["evidence"])
+
+
+class RunningKernelTest(unittest.TestCase):
+    """The build label names the kernel the Mac booted (uname -r), not the installed linux-aurora package."""
+
+    BOOTED = "7.1.12-1-1-ARCH"  # older than the installed linux-aurora 7.1.12.aurora2-2
+
+    def booted(self, release: str) -> dict:
+        rec = copy.deepcopy(M2_MAX)
+        next(c for c in rec["commands"] if c["argv"] == ["uname", "-r"])["stdout"] = f"{release}\n"
+        return rec
+
+    def test_the_build_label_names_the_booted_kernel(self):
+        mac, report = run(self.booted(self.BOOTED))
+
+        self.assertEqual(report["machine"]["kernel"], self.BOOTED)
+        line = next(text for text in mac.output.splitlines() if text.startswith("Build tested:"))
+        self.assertIn(f"running kernel {self.BOOTED}", line)
+        self.assertNotIn("linux-aurora 7.1.12.aurora2-2", line)
+
+    def test_explain_names_the_booted_kernel_too(self):
+        _, report = run(self.booted(self.BOOTED))
+
+        status, mac = explain(report)
+
+        self.assertEqual(status, 0)
+        self.assertIn(f"running kernel {self.BOOTED}", mac.output)
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ class PagesTest < ActionDispatch::IntegrationTest
     get "/models"
     assert_response :success
     assert_select "tr#model-j416c td", "MacBook Pro (16-inch, M2 Max, 2023)"
-    assert_select "tr#model-j416c td", "converged 4.0.0 · build 99ace40.361571887310001 (linux-aurora 7.1.12.aurora2-2, omarchy-mac-boot 20260925-3)"
-    assert_select "tr#model-j314s td", "mx-mac 4.0.2 · build aae2586"
+    assert_select "tr#model-j416c td", "converged 4.0.0 · build 99ace40.361571887310001 (running kernel 7.1.12-2-2-ARCH, omarchy-mac-boot 20260925-3)"
+    assert_select "tr#model-j314s td", "mx-mac 4.0.2 · build aae2586 (running kernel 7.1.13-1-1-ARCH)"
   end
 
   test "a model page shows what its chip is expected to do and each stack's results" do
@@ -24,7 +24,7 @@ class PagesTest < ActionDispatch::IntegrationTest
     assert_equal [ "–", "supported 7.1.12", "–" ], css_select("tr#feature-aop td.expected").map(&:text)
     assert_select "tr#feature-gpu td.expected.expected-yes", "linux-asahi"
     assert_select %(tr#feature-gpu td[data-state="works"])
-    assert_select "th.config-head", "converged 4.0.0 · build 99ace40.361571887310001 (linux-aurora 7.1.12.aurora2-2, omarchy-mac-boot 20260925-3)"
+    assert_select "th.config-head", "converged 4.0.0 · build 99ace40.361571887310001 (running kernel 7.1.12-2-2-ARCH, omarchy-mac-boot 20260925-3)"
     assert_select "tr.report-row", 2
     assert_select ".credit", /CC BY 3\.0/
   end
@@ -110,7 +110,7 @@ class PagesTest < ActionDispatch::IntegrationTest
     # hardware.drivers and hardware.probe-errors fail where the catalogue expects it: not yet supported, not failures
     assert_select "tr#report-#{second["id"]} td", /37 pass 2 fail 2 gap 32 skip/
     assert_select "tr#report-#{second["id"]} td.build-cell[data-build=?]", "99ace40.361571887310001"
-    assert_select "tr#report-#{first["id"]} td.build-cell a[href=?]", "/reports?build=aae2586"
+    assert_select "tr#report-#{first["id"]} td.build-cell a[href=?]", reports_path(build: "aae2586 (running kernel 7.1.13-1-1-ARCH)")
   end
 
   test "the report page reads like terminal output, grouped by section" do

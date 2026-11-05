@@ -44,7 +44,7 @@ def explain(host: Host, path: str, catalogue: Catalogue) -> bool:
         return False
 
     used = report.get("catalogue_version")
-    build = _build(report.get("system"))
+    build = _build(report.get("system"), machine.get("kernel"))
     if build:
         host.show(f"{model}, build {build}")
     host.show(f"{model}: {len(results)} results explained with feature catalogue v{catalogue.version}"
@@ -59,7 +59,7 @@ def explain(host: Host, path: str, catalogue: Catalogue) -> bool:
     return True
 
 
-def _build(system) -> str | None:
+def _build(system, kernel) -> str | None:
     """The build a saved report's run was on (system.build_words); None if it names none."""
     if not isinstance(system, dict) or not isinstance(system.get("packages"), list):
         return None
@@ -70,4 +70,5 @@ def _build(system) -> str | None:
     image = system.get("image") if isinstance(system.get("image"), dict) else {}
     candidate_set = system.get("candidate_set") or image.get("candidate_set")
     return build_words(packages, candidate_set if isinstance(candidate_set, str) else None,
-                       {key: value for key, value in image.items() if isinstance(value, str)})
+                       {key: value for key, value in image.items() if isinstance(value, str)},
+                       kernel if isinstance(kernel, str) else None)
