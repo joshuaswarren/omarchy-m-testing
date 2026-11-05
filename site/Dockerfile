@@ -1,7 +1,7 @@
 # The production image for Railway. Build from the repository root, since the
 # site reads the shared report schema, the feature catalogue and the installer
 # from next to site/:  docker build -f site/Dockerfile .
-ARG RUBY_VERSION=3.4.7
+ARG RUBY_VERSION=3.4.12
 FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
 WORKDIR /app/site
