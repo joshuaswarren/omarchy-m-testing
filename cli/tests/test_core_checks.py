@@ -346,6 +346,26 @@ EGL API version: 1.5
 OpenGL core profile renderer: llvmpipe (LLVM 21.1.0, 128 bits)
 OpenGL core profile version: 4.5 (Core Profile) Mesa 26.2.3
 """
+# Aurora's driver after the rename (Ryan 2026-11-20): driverName Borealis,
+# driver id 35. The id prints as UNKNOWN_VkDriverId_value35 when the local
+# Vulkan headers predate the new enum entry.
+VULKANINFO_BOREALIS = """\
+Devices:
+========
+GPU0:
+\tapiVersion         = 1.4.363
+\tdriverVersion      = 26.3.0
+\tdeviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+\tdeviceName         = Apple M4 Pro (G16S B1)
+\tdriverID           = UNKNOWN_VkDriverId_value35
+\tdriverName         = Borealis
+\tdriverInfo         = Mesa 26.3.0-devel (git-d4ad4a4dce), Borealis, derived from Honeykrisp
+GPU1:
+\tapiVersion         = 1.4.363
+\tdeviceName         = llvmpipe (LLVM 21.1.0, 128 bits)
+\tdriverID           = DRIVER_ID_MESA_LLVMPIPE
+\tdriverName         = llvmpipe
+"""
 
 
 class GpuTest(unittest.TestCase):
@@ -365,6 +385,21 @@ class GpuTest(unittest.TestCase):
             "OpenGL core profile version: 4.6 (Core Profile) Mesa 26.2.3",
             "OpenGL ES profile version: OpenGL ES 3.2 Mesa 26.2.3",
         ])
+
+    def test_the_borealis_driver_is_an_apple_gpu(self):
+        """Aurora's renamed driver reports id 35 and the name Borealis."""
+        rec = copy.deepcopy(M2_MAX)
+        answer(rec, ["vulkaninfo", "--summary"], 0, stdout=VULKANINFO_BOREALIS)
+
+        _, _, report = run(rec)
+
+        vulkan = results(report)["gpu.vulkan"]
+        self.assertEqual(vulkan["status"], "pass")
+        self.assertEqual(
+            vulkan["evidence"],
+            ["Apple M4 Pro (G16S B1): Borealis, "
+             "Mesa 26.3.0-devel (git-d4ad4a4dce), Borealis, derived from Honeykrisp, "
+             "Vulkan 1.4.363"])
 
     def test_software_rendering_is_a_gpu_failure(self):
         rec = copy.deepcopy(M2_MAX)
