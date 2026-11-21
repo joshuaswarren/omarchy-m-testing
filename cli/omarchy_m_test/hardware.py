@@ -168,11 +168,32 @@ def _vulkan_devices(text: str) -> list[dict[str, str]]:
     return devices
 
 
+def _is_apple_gpu_device(device: dict[str, str]) -> bool:
+    """True for the Apple GPU on the Asahi/Borealis Vulkan driver.
+
+    The driver id prints as the Khronos enum name when the local Vulkan
+    headers know it (``DRIVER_ID_MESA_HONEYKRISP``), as
+    ``UNKNOWN_VkDriverId_value35`` when they predate Aurora's Borealis
+    entry, and the driver name is ``Borealis`` after the rename (Ryan
+    2026-11-20). Match the name and every id spelling.
+    """
+    driver_id = device.get("driverID", "").upper()
+    driver_name = device.get("driverName", "").upper()
+    if "HONEYKRISP" in driver_id or "BOREALIS" in driver_id:
+        return True
+    if "VALUE26" in driver_id or "VALUE35" in driver_id:
+        return True
+    return "HONEYKRISP" in driver_name or "BOREALIS" in driver_name
+
+
 def gpu_vulkan(host: Host, system: System) -> dict:
     icds = _list(host, VULKAN_ICDS) or []
-    asahi = [name for name in icds if name.startswith("asahi_icd")]
+    # The ICD file keeps the asahi_icd name on stock Mesa and becomes
+    # borealis_icd.<arch>.json after Aurora's rename (Ryan 2026-11-20).
+    asahi = [name for name in icds
+             if name.startswith(("asahi_icd", "borealis_icd"))]
     if not asahi:
-        evidence = ["no Asahi Vulkan driver in /usr/share/vulkan/icd.d" + (f" (only {', '.join(icds)})" if icds else "")]
+        evidence = ["no Asahi or Borealis Vulkan driver in /usr/share/vulkan/icd.d" + (f" (only {', '.join(icds)})" if icds else "")]
         if system.has_pacman and "vulkan-asahi" not in system.packages:
             evidence.append("vulkan-asahi is not installed")
         return _result("gpu.vulkan", "fail", evidence)
@@ -184,10 +205,14 @@ def gpu_vulkan(host: Host, system: System) -> dict:
             return _result("gpu.vulkan", "fail", [*installed, "no GPU is bound to the asahi GPU driver, so it has no Apple GPU to use"])
         return _result("gpu.vulkan", "pass", installed)
     devices = _vulkan_devices(info.stdout)
-    apple = [d for d in devices if "HONEYKRISP" in d.get("driverID", "").upper()]
+    # Aurora renamed the driver to Borealis (Ryan 2026-11-20). Its driver id
+    # prints as UNKNOWN_VkDriverId_value35 when the local Vulkan headers
+    # predate the new enum entry, so match the driver name and both id
+    # spellings instead of one string.
+    apple = [d for d in devices if _is_apple_gpu_device(d)]
     if not apple:
         names = ", ".join(d.get("deviceName", "?") for d in devices) or "none"
-        evidence = [f"vulkaninfo lists no Asahi (Honeykrisp) device; devices: {names}"]
+        evidence = [f"vulkaninfo lists no Asahi (Honeykrisp or Borealis) device; devices: {names}"]
         if info.returncode != 0:
             evidence.append(f"vulkaninfo exited {info.returncode}: " + ((info.stderr.strip().splitlines() or ["no message"])[-1]))
         return _result("gpu.vulkan", "fail", evidence)
